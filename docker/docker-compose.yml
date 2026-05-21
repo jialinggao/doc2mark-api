@@ -1,0 +1,46 @@
+version: '3.8'
+
+name: doc2mark-api
+
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: doc2mark-api-api
+    ports:
+      - "5926:5926"
+    env_file:
+      - .env
+    volumes:
+      - ./volumes/logs:/app/logs
+      - ./volumes/temp:/app/temp
+    depends_on:
+      - redis
+    restart: unless-stopped
+    command: python -m app.main
+
+  worker:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    container_name: doc2mark-api-worker
+    env_file:
+      - .env
+    volumes:
+      - ./volumes/logs:/app/logs
+      - ./volumes/temp:/app/temp
+    depends_on:
+      - redis
+    restart: unless-stopped
+    command: python -m app.run_worker
+
+  redis:
+    image: redis:8.6.2
+    container_name: doc2mark-api-redis
+    volumes:
+      - ./volumes/redis:/data
+    restart: unless-stopped
+
+volumes:
+  redis_data:
