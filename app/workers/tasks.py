@@ -51,6 +51,10 @@ def process_document_task(
         duration = time.time() - start_time
         result["duration"] = round(duration, 2)
         
+        from app.api.metrics import metrics_collector
+        task_type = metrics_collector._get_task_type(enable_ocr, enable_llm)
+        metrics_collector.post_request_record(task_type, duration * 1000)
+        
         if callback_url:
             try:
                 requests.post(callback_url, json={

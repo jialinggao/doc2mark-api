@@ -16,8 +16,25 @@ class MetricsCollector:
         self.response_times = []
         self.daily_response_times = defaultdict(list)
         self.max_response_times = 10000
+        
+        self.task_type_metrics = {
+            "text_only": [],
+            "with_ocr": [],
+            "with_llm": [],
+            "ocr_plus_llm": []
+        }
     
-    def record_request(self, duration_ms: float, is_error: bool = False):
+    def _get_task_type(self, enable_ocr: bool = False, enable_llm: bool = False) -> str:
+        if enable_ocr and enable_llm:
+            return "ocr_plus_llm"
+        elif enable_ocr:
+            return "with_ocr"
+        elif enable_llm:
+            return "with_llm"
+        else:
+            return "text_only"
+    
+    def record_request(self, duration_ms: float, is_error: bool = False, enable_ocr: bool = False, enable_llm: bool = False):
         with self._lock:
             self.total_requests += 1
             today = date.today().isoformat()
@@ -34,6 +51,17 @@ class MetricsCollector:
             if is_error:
                 self.total_errors += 1
                 self.daily_errors[today] += 1
+            
+            task_type = self._get_task_type(enable_ocr, enable_llm)
+            self.task_type_metrics[task_type].append(duration_ms)
+            if len(self.task_type_metrics[task_type]) > self.max_response_times:
+                self.task_type_metrics[task_type] = self.task_type_metrics[task_type][-self.max_response_times:]
+    
+    def post_request_record(self, task_type: str, duration_ms: float):
+        with self._lock:
+            self.task_type_metrics[task_type].append(duration_ms)
+            if len(self.task_type_metrics[task_type]) > self.max_response_times:
+                self.task_type_metrics[task_type] = self.task_type_metrics[task_type][-self.max_response_times:]
     
     def get_percentile(self, data: list, percentile: float) -> float:
         if not data:
@@ -58,6 +86,17 @@ class MetricsCollector:
             
             today_avg = sum(today_times) / len(today_times) if today_times else 0
             
+            task_type_stats = {}
+            for task_type, times in self.task_type_metrics.items():
+                if times:
+                    task_type_stats[task_type] = {
+                        "count": len(times),
+                        "avg_ms": round(sum(times) / len(times), 2),
+                        "p50_ms": round(self.get_percentile(times, 50), 2),
+                        "p95_ms": round(self.get_percentile(times, 95), 2),
+                        "p99_ms": round(self.get_percentile(times, 99), 2)
+                    }
+            
             return {
                 "requests": {
                     "total": self.total_requests,
@@ -70,7 +109,8 @@ class MetricsCollector:
                     "p50_ms": round(all_p50, 2),
                     "p95_ms": round(all_p95, 2),
                     "p99_ms": round(all_p99, 2)
-                }
+                },
+                "task_type_performance": task_type_stats
             }
     
     @staticmethod

@@ -99,12 +99,16 @@ async def convert_document(
         raise HTTPException(status_code=500, detail=payload.get("error", "转换失败"))
 
     result = payload["result"]
+    duration = result.get("duration", 0)
     convert_data = ConvertData(
         filename=result["filename"],
         markdown=result["markdown"],
         images=[ImageInfo(**img) for img in result.get("images", [])],
-        duration=result.get("duration")
+        duration=duration
     )
+    
+    task_type = metrics_collector._get_task_type(enable_ocr, enable_llm)
+    metrics_collector.post_request_record(task_type, duration * 1000)
 
     return ConvertResponse(
         code=200,
@@ -286,9 +290,9 @@ async def health_check():
         version="1.0.0",
         uptime=uptime,
         dependencies=HealthDependencies(
-            redis=redis_connected,
-            tesseract=tesseract_available,
-            llm=llm_available,
+            redis="healthy" if redis_connected else "unhealthy",
+            tesseract="healthy" if tesseract_available else "unhealthy",
+            llm="healthy" if llm_available else "unhealthy",
         ),
         metrics=HealthMetrics(
             total_requests=request_metrics["requests"]["total"],
@@ -366,14 +370,21 @@ async def get_metrics():
         db=settings.REDIS_DB
     )
     
-    queue_pending = 0
-    queue_processing = 0
+    sync_queue_pending = 0
+    sync_queue_processing = 0
+    async_queue_pending = 0
+    async_queue_processing = 0
     
     try:
         from rq import Queue
-        queue = Queue(connection=redis_conn)
-        queue_pending = len(queue)
-        queue_processing = len(queue.started_job_registry)
+        sync_queue = Queue(name="sync_conversion", connection=redis_conn)
+        async_queue = Queue(name="async_conversion", connection=redis_conn)
+        
+        sync_queue_pending = len(sync_queue)
+        sync_queue_processing = len(sync_queue.started_job_registry)
+        
+        async_queue_pending = len(async_queue)
+        async_queue_processing = len(async_queue.started_job_registry)
     except:
         pass
     
@@ -410,10 +421,11 @@ async def get_metrics():
             "timestamp": datetime.now().isoformat()
         })
     
-    if queue_pending > 100:
+    total_pending = sync_queue_pending + async_queue_pending
+    if total_pending > 100:
         alerts.append({
             "level": "warning",
-            "message": f"队列积压严重 (待处理: {queue_pending})",
+            "message": f"队列积压严重 (待处理: {total_pending})",
             "timestamp": datetime.now().isoformat()
         })
     
@@ -422,10 +434,18 @@ async def get_metrics():
         "data": {
             "requests": request_metrics["requests"],
             "performance": request_metrics["performance"],
+            "task_type_performance": request_metrics.get("task_type_performance", {}),
             "resources": resource_metrics,
             "queue": {
-                "pending_tasks": queue_pending,
-                "processing_tasks": queue_processing
+                "sync_queue": {
+                    "pending_tasks": sync_queue_pending,
+                    "processing_tasks": sync_queue_processing
+                },
+                "async_queue": {
+                    "pending_tasks": async_queue_pending,
+                    "processing_tasks": async_queue_processing
+                },
+                "total_pending": total_pending
             },
             "alerts": alerts
         }

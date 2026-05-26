@@ -64,9 +64,9 @@ class TaskResult(BaseModel):
 
 
 class HealthDependencies(BaseModel):
-    redis: bool = Field(..., description="Redis 连接状态")
-    tesseract: bool = Field(..., description="Tesseract OCR 可用状态")
-    llm: bool = Field(..., description="LLM 大模型服务可用状态")
+    redis: str = Field(..., description="Redis 连接状态：healthy/unhealthy")
+    tesseract: str = Field(..., description="Tesseract OCR 可用状态：healthy/unhealthy")
+    llm: str = Field(..., description="LLM 大模型服务可用状态：healthy/unhealthy")
 
 
 class HealthMetrics(BaseModel):

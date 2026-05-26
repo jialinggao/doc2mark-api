@@ -194,12 +194,24 @@
         <div class="metric-card">
             <h3>队列状态</h3>
             <div class="metric-row">
-                <span class="metric-label">待处理任务</span>
-                <span class="metric-value" id="queue-pending">-</span>
+                <span class="metric-label">同步队列待处理</span>
+                <span class="metric-value" id="sync-queue-pending">-</span>
             </div>
             <div class="metric-row">
-                <span class="metric-label">处理中任务</span>
-                <span class="metric-value" id="queue-processing">-</span>
+                <span class="metric-label">同步队列处理中</span>
+                <span class="metric-value" id="sync-queue-processing">-</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">异步队列待处理</span>
+                <span class="metric-value" id="async-queue-pending">-</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">异步队列处理中</span>
+                <span class="metric-value" id="async-queue-processing">-</span>
+            </div>
+            <div class="metric-row">
+                <span class="metric-label">总待处理</span>
+                <span class="metric-value" id="queue-total">-</span>
             </div>
             <div class="metric-row">
                 <span class="metric-label">队列状态</span>
@@ -263,11 +275,14 @@
                 document.getElementById('disk-usage').textContent = data.resources.disk_usage + '%';
                 document.getElementById('disk-free').textContent = data.resources.disk_free_gb + ' GB';
                 
-                document.getElementById('queue-pending').textContent = data.queue.pending_tasks;
-                document.getElementById('queue-processing').textContent = data.queue.processing_tasks;
+                document.getElementById('sync-queue-pending').textContent = data.queue.sync_queue.pending_tasks;
+                document.getElementById('sync-queue-processing').textContent = data.queue.sync_queue.processing_tasks;
+                document.getElementById('async-queue-pending').textContent = data.queue.async_queue.pending_tasks;
+                document.getElementById('async-queue-processing').textContent = data.queue.async_queue.processing_tasks;
+                document.getElementById('queue-total').textContent = data.queue.total_pending;
                 
-                const queueStatus = data.queue.pending_tasks > 100 ? '积压严重' : 
-                                   data.queue.pending_tasks > 50 ? '轻度积压' : '正常';
+                const queueStatus = data.queue.total_pending > 100 ? '积压严重' : 
+                                   data.queue.total_pending > 50 ? '轻度积压' : '正常';
                 document.getElementById('queue-status').textContent = queueStatus;
                 document.getElementById('queue-status').className = 
                     `metric-value ${queueStatus === '正常' ? 'status-healthy' : queueStatus === '轻度积压' ? 'status-warning' : 'status-error'}`;
