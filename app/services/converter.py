@@ -4,6 +4,8 @@ from app.config import settings
 from app.models import ImageMode
 from app.services.ocr_service import ocr_service
 from app.services.llm_service import llm_service
+from app.services.docx_list_parser import docx_list_parser
+from docx import Document
 from typing import Optional, BinaryIO, Tuple, List, Dict
 from PIL import Image
 import base64
@@ -112,11 +114,32 @@ class DocumentConverterService:
         max_image_size: int,
         start_time: float
     ) -> dict:
+        custom_list_items = []
+        
+        docx_list_items = []
+        if filename.lower().endswith('.docx'):
+            try:
+                file_stream.seek(0)
+                doc = Document(file_stream)
+                docx_list_items = docx_list_parser.extract_all_list_items(doc)
+                
+                if len(docx_list_items) == 0:
+                    docx_list_items = docx_list_parser.extract_list_items_with_style(doc)
+                
+                file_stream.seek(0)
+            except Exception as e:
+                logger.warning(f"[DOCX 列表解析] 解析失败: {e}")
+                docx_list_items = []
+        
         # 使用 keep_data_uris=True 保留完整的 base64 图片数据
         result = self.md.convert(file_stream, file_path=filename, keep_data_uris=True)
         
         raw_markdown = result.text_content
-        logger.info(f"[转换] 文件：{filename}，MarkItDown 输出长度：{len(raw_markdown)} 字符")
+        
+        if docx_list_items:
+            raw_markdown = self._restore_custom_list_format(raw_markdown, docx_list_items)
+        
+        raw_markdown = self._clean_word_special_chars(raw_markdown)
         
         # 如果 MarkItDown 无法提取内容（如扫描件 PDF），使用 PyMuPDF 将每页转为图片
         if not raw_markdown.strip() and filename.lower().endswith('.pdf'):
@@ -128,7 +151,6 @@ class DocumentConverterService:
         # 从 Markdown 中提取所有 base64 图片
         image_pattern = r'!\[([^\]]*)\]\(data:image/(\w+);base64,([A-Za-z0-9+/=]+)\)'
         image_matches = re.findall(image_pattern, raw_markdown)
-        logger.info(f"[MarkItDown 图片提取] 找到 {len(image_matches)} 张图片")
         
         markdown_text = raw_markdown
         images = []
@@ -189,7 +211,6 @@ class DocumentConverterService:
             # 替换原图片占位符
             original_base64_uri = f"![{alt_text}](data:image/{img_type};base64,{base64_data})"
             markdown_text = markdown_text.replace(original_base64_uri, image_block, 1)
-            logger.info(f"[图片处理] 已处理第 {idx + 1} 张图片: {img_name}")
         
         duration = time.time() - start_time
         
@@ -432,6 +453,64 @@ class DocumentConverterService:
             return f"**[图片 - {img_name}]**\n\n![{img_name}](images/{img_name})\n\n"
         
         return ""
+    
+    def _clean_word_special_chars(self, markdown: str) -> str:
+        """清理 Word 文档中的特殊格式字符（PUA 字符）"""
+        cleaned = markdown
+        
+        for code in range(0xE000, 0xF900):
+            char = chr(code)
+            if char in cleaned:
+                cleaned = cleaned.replace(char, '')
+        
+        return cleaned
+    
+    def _restore_custom_list_format(self, markdown: str, list_items: List[Tuple[str, str]]) -> str:
+        """恢复自定义列表格式"""
+        if not list_items:
+            return markdown
+        
+        lines = markdown.split('\n')
+        new_lines = []
+        item_index = 0
+        
+        for line in lines:
+            line_stripped = line.strip()
+            
+            if not line_stripped:
+                new_lines.append(line)
+                continue
+            
+            if item_index < len(list_items):
+                lvl_text, original_content = list_items[item_index]
+                content_stripped = original_content.strip()
+                
+                if not content_stripped:
+                    new_lines.append(line)
+                    continue
+                
+                line_clean = re.sub(r'^\d+\.\s*', '', line_stripped)
+                
+                content_clean = re.sub(r'[^\w\u4e00-\u9fff]', '', content_stripped)
+                line_clean_for_match = re.sub(r'[^\w\u4e00-\u9fff]', '', line_clean)
+                
+                min_match_len = min(len(content_clean), 8)
+                if min_match_len >= 4 and line_clean_for_match.startswith(content_clean[:min_match_len]):
+                    new_lines.append(f'- {lvl_text} {line_clean}')
+                    item_index += 1
+                elif re.match(r'^\d+\.\s*', line_stripped):
+                    if item_index < len(list_items):
+                        lvl_text, _ = list_items[item_index]
+                        new_lines.append(f'- {lvl_text} {line_clean}')
+                        item_index += 1
+                    else:
+                        new_lines.append(line)
+                else:
+                    new_lines.append(line)
+            else:
+                new_lines.append(line)
+        
+        return '\n'.join(new_lines)
 
 
 converter_service = DocumentConverterService()
