@@ -136,6 +136,8 @@ class DocumentConverterService:
         
         raw_markdown = result.text_content
         
+        raw_markdown = self._remove_pdf_bold_duplicates(raw_markdown)
+        
         if docx_list_items:
             raw_markdown = self._restore_custom_list_format(raw_markdown, docx_list_items)
         
@@ -464,6 +466,30 @@ class DocumentConverterService:
                 cleaned = cleaned.replace(char, '')
         
         return cleaned
+    
+    def _remove_pdf_bold_duplicates(self, markdown: str) -> str:
+        """清理PDF中由于加粗效果导致的重复字符（同一字符连续绘制多次）"""
+        if not markdown:
+            return markdown
+        
+        cleaned = []
+        i = 0
+        n = len(markdown)
+        
+        while i < n:
+            current_char = markdown[i]
+            cleaned.append(current_char)
+            i += 1
+            
+            if i < n and markdown[i] == current_char:
+                duplicate_count = 1
+                while i + duplicate_count < n and markdown[i + duplicate_count] == current_char:
+                    duplicate_count += 1
+                
+                if 2 <= duplicate_count <= 4:
+                    i += duplicate_count - 1
+        
+        return ''.join(cleaned)
     
     def _restore_custom_list_format(self, markdown: str, list_items: List[Tuple[str, str]]) -> str:
         """恢复自定义列表格式"""
