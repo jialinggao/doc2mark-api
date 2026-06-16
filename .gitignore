@@ -1,0 +1,50 @@
+# 依赖目录
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+temp/
+*.tmp
+*.temp
+
+# 配置文件（包含敏感信息）
+.env
+.env.local
+.env.*.local
+
+# Docker数据卷
+docker/volumes/
+
+# 编辑器配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+
+# IDE工具（非项目代码）
+.agents/
+.arts/
+.codeartsdoer/
+
+# 测试输出
+.coverage
+htmlcov/
+
+# 构建产物
+dist/
+build/
+*.egg-info/
