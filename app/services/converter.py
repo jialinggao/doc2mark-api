@@ -27,10 +27,18 @@ OLD_TO_NEW_FORMAT = {
 
 
 class DocumentConverterService:
+    """文档转换服务，负责将各种格式的文档转换为 Markdown 文本，并支持图片提取、OCR识别和LLM描述"""
+
     def __init__(self):
+        """初始化文档转换服务，创建 MarkItDown 实例"""
         self.md = self._initialize_markitdown()
     
     def _initialize_markitdown(self) -> MarkItDown:
+        """初始化 MarkItDown 实例，根据配置决定是否启用 LLM 增强模式
+        
+        Returns:
+            MarkItDown: 配置好的 MarkItDown 转换器实例
+        """
         if settings.ENABLE_LLM:
             client = OpenAI(
                 base_url=settings.LLM_BASE_URL,
@@ -54,6 +62,22 @@ class DocumentConverterService:
         image_quality: int = 100,
         max_image_size: int = -1
     ) -> dict:
+        """文档转换入口方法，将文件流转换为 Markdown 格式
+
+        对于旧版 Office 格式（.doc/.ppt/.xls），会先自动转换为新版格式再处理。
+
+        Args:
+            file_stream: 文件二进制流
+            filename: 文件名（含扩展名），用于判断文件类型
+            enable_ocr: 是否启用 OCR 图片文字识别，默认 False
+            enable_llm: 是否启用 LLM 图片描述，默认 False
+            image_mode: 图片输出模式（BASE64/PLACEHOLDER/EXTERNAL），默认 BASE64
+            image_quality: JPEG 图片压缩质量（1-100），默认 100 不压缩
+            max_image_size: 图片最大尺寸（像素），超过则等比缩放，-1 表示不限制
+
+        Returns:
+            dict: 包含 filename、markdown、images、duration 的转换结果字典
+        """
         start_time = time.time()
         
         ext = os.path.splitext(filename.lower())[1]
@@ -78,6 +102,21 @@ class DocumentConverterService:
         )
     
     def _convert_old_office_format(self, file_stream: BinaryIO, filename: str, new_ext: str) -> BinaryIO:
+        """将旧版 Office 格式文件转换为新版格式（如 .doc -> .docx）
+        
+        通过调用 LibreOffice 命令行工具实现格式转换。
+        
+        Args:
+            file_stream: 原始文件二进制流
+            filename: 原始文件名
+            new_ext: 目标扩展名（如 .docx、.pptx、.xlsx）
+            
+        Returns:
+            BinaryIO: 转换后的新版格式文件流
+            
+        Raises:
+            RuntimeError: LibreOffice 转换失败或输出文件不存在时抛出
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             input_path = os.path.join(tmpdir, filename)
             with open(input_path, "wb") as f:
@@ -114,6 +153,25 @@ class DocumentConverterService:
         max_image_size: int,
         start_time: float
     ) -> dict:
+        """核心转换逻辑：将文件流转为 Markdown，处理图片、OCR 和 LLM 描述
+        
+        对于 DOCX 文件，会先解析列表格式；对于 PDF 文件，委托给 PyMuPDF 处理；
+        其他格式使用 MarkItDown 进行转换。转换后提取内嵌图片并按需进行 OCR 识别、
+        LLM 描述和图片模式格式化。
+        
+        Args:
+            file_stream: 文件二进制流
+            filename: 文件名
+            enable_ocr: 是否启用 OCR 识别
+            enable_llm: 是否启用 LLM 图片描述
+            image_mode: 图片输出模式
+            image_quality: 图片压缩质量
+            max_image_size: 图片最大尺寸限制
+            start_time: 转换开始时间戳，用于计算耗时
+            
+        Returns:
+            dict: 包含 filename、markdown、images、duration 的转换结果字典
+        """
         custom_list_items = []
         
         docx_list_items = []
@@ -222,6 +280,19 @@ class DocumentConverterService:
         }
     
     def _compress_image(self, image_data: bytes, quality: int = 100, max_size: int = -1) -> tuple:
+        """压缩图片：根据质量参数和最大尺寸限制进行处理
+
+        对于 JPEG 格式按 quality 参数压缩；对于 PNG 格式使用最高压缩级别；
+        如果指定了 max_size，则等比缩放使最长边不超过该值。
+
+        Args:
+            image_data: 原始图片字节数据
+            quality: JPEG 压缩质量（1-100），默认 100 不压缩
+            max_size: 图片最大边长（像素），-1 表示不限制缩放
+
+        Returns:
+            tuple: (处理后的图片字节数据, 图片格式字符串) 如 (bytes, 'jpeg')
+        """
         try:
             img = Image.open(io.BytesIO(image_data))
             
@@ -257,7 +328,23 @@ class DocumentConverterService:
         enable_ocr: bool = False,
         enable_llm: bool = False
     ) -> dict:
-        """当 MarkItDown 无法提取 PDF 内容时的回退方案：将每页转为图片"""
+        """当 MarkItDown 无法提取 PDF 内容时的回退方案：将每页转为图片
+        
+        将 PDF 每一页渲染为灰度 PNG 图片（150 DPI），以减小体积。
+        可选地进行 OCR 识别和 LLM 描述。
+        
+        Args:
+            file_stream: PDF 文件二进制流
+            filename: 文件名
+            image_mode: 图片输出模式
+            image_quality: 图片压缩质量，默认 100
+            max_image_size: 图片最大尺寸限制，-1 表示不限制
+            enable_ocr: 是否启用 OCR 识别，默认 False
+            enable_llm: 是否启用 LLM 描述，默认 False
+            
+        Returns:
+            dict: 包含 filename、markdown、images、duration 的转换结果字典
+        """
         start_time = time.time()
         images = []
         markdown_text = ""
@@ -343,6 +430,25 @@ class DocumentConverterService:
         enable_llm: bool = False,
         enable_ocr: bool = False
     ) -> tuple:
+        """处理 PDF 中的内嵌图片：提取、压缩，并可选进行 OCR/LLM 处理
+
+        遍历 PDF 每一页的所有内嵌图片，提取后按需压缩，
+        并根据启用选项添加 OCR 识别结果或 LLM 描述，
+        最后将图片块均匀插入到已有 Markdown 文本中。
+
+        Args:
+            file_stream: PDF 文件二进制流
+            filename: 文件名
+            markdown_text: 已有的 Markdown 文本（图片块将被插入其中）
+            image_mode: 图片输出模式
+            image_quality: 图片压缩质量
+            max_image_size: 图片最大尺寸限制
+            enable_llm: 是否启用 LLM 描述
+            enable_ocr: 是否启用 OCR 识别
+
+        Returns:
+            tuple: (处理后的 Markdown 文本, 图片信息列表)
+        """
         images = []
         
         try:
@@ -404,6 +510,18 @@ class DocumentConverterService:
         return markdown_text, images
     
     def _insert_image_blocks(self, markdown_text: str, image_blocks: list) -> str:
+        """将图片块均匀插入到 Markdown 文本的段落之间
+        
+        将 Markdown 按双换行分段落，然后在段落之间均匀分配插入图片块，
+        使图片与文本内容交替出现，避免图片集中堆叠在文末。
+        
+        Args:
+            markdown_text: 原始 Markdown 文本
+            image_blocks: 待插入的图片块列表（每个元素为一段 Markdown 格式图片描述）
+            
+        Returns:
+            str: 插入图片后的 Markdown 文本
+        """
         paragraphs = re.split(r'\n\n+', markdown_text.strip())
         
         if len(paragraphs) <= 1:
@@ -443,6 +561,16 @@ class DocumentConverterService:
         image_mode: ImageMode,
         image_info: dict
     ) -> str:
+        """根据图片输出模式生成对应格式的图片 Markdown 表示
+
+        Args:
+            img_name: 图片名称
+            image_mode: 图片输出模式（BASE64 嵌入/PLACEHOLDER 占位/EXTERNAL 外部引用）
+            image_info: 图片信息字典，包含 base64 content 等
+
+        Returns:
+            str: 格式化后的图片 Markdown 文本
+        """
         if image_mode == ImageMode.BASE64:
             return f"**[图片 - {img_name}]**\n\n![{img_name}]({image_info['content']})\n\n"
         
@@ -464,7 +592,28 @@ class DocumentConverterService:
         image_quality: int = 100,
         max_image_size: int = -1
     ) -> dict:
-        """使用 PyMuPDF 转换 PDF 文件，自动处理重复字符问题"""
+        """使用 PyMuPDF (fitz) 转换 PDF 文件，自动处理重复字符问题
+        
+        对于 PDF 文件不使用 MarkItDown，而是直接通过 PyMuPDF 提取文本和表格，
+        并处理重复字符（PDF 渲染重叠问题）。支持：
+        - 基于坐标排序的文本提取，保留阅读顺序
+        - 表格识别并转为 Markdown 表格格式
+        - 页码过滤（底部10%区域的纯数字文本）
+        - 重叠文本片段合并与加粗标记
+        - 内嵌图片提取与 OCR/LLM 处理
+        
+        Args:
+            file_stream: PDF 文件二进制流
+            filename: 文件名
+            enable_ocr: 是否启用 OCR 识别，默认 False
+            enable_llm: 是否启用 LLM 描述，默认 False
+            image_mode: 图片输出模式，默认 BASE64
+            image_quality: 图片压缩质量，默认 100
+            max_image_size: 图片最大尺寸限制，-1 表示不限制
+            
+        Returns:
+            dict: 包含 filename、markdown、images、duration 的转换结果字典
+        """
         start_time = time.time()
         images = []
         markdown_text = ""
@@ -481,12 +630,72 @@ class DocumentConverterService:
                 
                 page_text = ""
                 
-                # 用于存储所有文本行（包含位置和加粗信息）
-                all_text_lines = []
+                # 用于存储所有内容（文本行和表格），按位置排序
+                page_contents = []
+                
+                # 获取页面高度，用于判断页码位置
+                page_rect = page.rect
+                page_height = page_rect.height
+                # 底部10%区域认为是页码区域
+                footer_threshold = page_height * 0.9
+                
+                # 使用page.find_tables()提取表格（更准确的表格识别）
+                # 收集表格的边界框，用于后续过滤重复文本
+                table_bboxes = []
+                tables = page.find_tables()
+                for table in tables:
+                    table_data = table.extract()
+                    if table_data:
+                        md_table = "\n"
+                        for row_idx, row in enumerate(table_data):
+                            md_row = "|"
+                            for cell in row:
+                                cell_text = str(cell).strip() if cell else ""
+                                cell_text = self._remove_duplicate_chars(cell_text)
+                                md_row += f" {cell_text} |"
+                            md_row += "\n"
+                            md_table += md_row
+                            
+                            if row_idx == 0 and len(row) > 0:
+                                md_table += "|" + " --- |" * len(row) + "\n"
+                        
+                        # 获取表格的起始y坐标
+                        table_y0 = table.bbox[1] if hasattr(table, 'bbox') else 0
+                        page_contents.append({
+                            'type': 'table',
+                            'y0': table_y0,
+                            'content': md_table
+                        })
+                        # 记录表格边界框，用于过滤重复文本
+                        if hasattr(table, 'bbox'):
+                            table_bboxes.append(table.bbox)
+                
+                # 判断文本块是否在表格区域内
+                def is_in_table(block_bbox):
+                    """判断给定的文本块边界框是否与任何表格边界框重叠
+
+                    Args:
+                        block_bbox: 文本块边界框 [x0, y0, x1, y1]
+
+                    Returns:
+                        bool: 是否在表格区域内
+                    """
+                    for t_bbox in table_bboxes:
+                        # 检查是否有重叠
+                        if (block_bbox[0] < t_bbox[2] and 
+                            block_bbox[2] > t_bbox[0] and 
+                            block_bbox[1] < t_bbox[3] and 
+                            block_bbox[3] > t_bbox[1]):
+                            return True
+                    return False
                 
                 # 遍历每个文本块
                 for block in text_dict.get("blocks", []):
                     if block["type"] == 0:  # text block
+                        # 检查是否在表格区域内，如果是则跳过（避免重复）
+                        block_bbox = block.get("bbox", [0, 0, 0, 0])
+                        if is_in_table(block_bbox):
+                            continue
                         # 收集所有片段（不再按精确y坐标分组）
                         all_fragments = []
                         
@@ -579,16 +788,13 @@ class DocumentConverterService:
                                     
                                     # 不在同一行，直接作为新片段
                                     if not same_line:
-                                        print(f"  → 不同行：作为新片段, bold_ranges={frag['bold_ranges']}")
                                         merged_fragments.append(frag.copy())
                                     # 情况1：内容完全相同（重复绘制）- 标记整个文本为加粗
                                     elif curr_text == last_text:
-                                        print(f"  → 情况1：内容完全相同，标记整个文本加粗")
                                         # 整个文本都是重复的，标记为加粗
                                         last['bold_ranges'] = [(0, len(last_text))]
                                     # 情况2：当前片段在左边且有前缀重叠，前置合并
                                     elif curr_on_left and prefix_overlap:
-                                        print(f"  → 情况2：当前在左边且前缀重叠，前置合并")
                                         merged_text = curr_text + last_text[prefix_overlap_len:]
                                         last['text'] = merged_text
                                         last['x0'] = curr_x0
@@ -599,7 +805,6 @@ class DocumentConverterService:
                                         last['bold_ranges'] = [(overlap_start, overlap_end)]
                                     # 情况3：内容重叠且边框重叠，合并它们
                                     elif overlap_found and border_overlap:
-                                        print(f"  → 情况3：内容重叠且边框重叠，合并")
                                         merged_text = last_text + curr_text[max_overlap:]
                                         last['text'] = merged_text
                                         # 更新合并后的边框范围（取最小x0和最大x1）
@@ -612,7 +817,6 @@ class DocumentConverterService:
                                         last['bold_ranges'] = [(overlap_start, overlap_end)]
                                     # 情况4：当前片段是上一片段的子集，且边框重叠，标记为重复
                                     elif curr_text in last_text and border_overlap:
-                                        print(f"  → 情况4：当前是子集且边框重叠")
                                         # 找到curr_text在last_text中的位置
                                         start_pos = last_text.find(curr_text)
                                         end_pos = start_pos + len(curr_text)
@@ -620,7 +824,6 @@ class DocumentConverterService:
                                         last['bold_ranges'] = [(start_pos, end_pos)]
                                     # 情况5：上一片段是当前片段的子集（内容完全包含），替换为更完整的内容
                                     elif last_text in curr_text:
-                                        print(f"  → 情况5：上一是子集，替换为完整内容")
                                         last['text'] = curr_text
                                         # 更新边框范围
                                         last['x0'] = min(last_x0, curr_x0)
@@ -632,7 +835,6 @@ class DocumentConverterService:
                                         last['bold_ranges'] = [(start_pos, end_pos)]
                                     # 情况6：同一行内相邻的片段（位置接近但内容不重叠），拼接起来
                                     elif curr_x0 - last_x1 < 20:  # 间距小于20像素认为是相邻
-                                        print(f"  → 情况6：同一行相邻片段，拼接")
                                         last['text'] = last_text + curr_text
                                         last['x1'] = curr_x1
                                         # 拼接部分不标记为加粗（除非原本就是加粗）
@@ -645,65 +847,56 @@ class DocumentConverterService:
                                         last['bold_ranges'] = merged_bold_ranges
                                     else:
                                         # 没有重叠或边框不重叠，作为新片段，重置边框
-                                        print(f"  → 其他：作为新片段, bold_ranges={frag['bold_ranges']}")
                                         merged_fragments.append(frag.copy())
                             
-                            # 将合并后的片段添加到总列表
+                            # 将合并后的片段添加到总列表（过滤页码）
                             for frag in merged_fragments:
-                                print(f"  最终片段: '{frag['text']}', bold_ranges={frag['bold_ranges']}")
-                                all_text_lines.append({
-                                    'text': frag['text'],
-                                    'bold_ranges': frag['bold_ranges'],
-                                    'y0': frag['y0']
-                                })
+                                text = frag['text'].strip()
+                                y0 = frag['y0']
+                                # 判断是否是页码：位于底部10%区域且内容是数字或"第X页"格式
+                                is_page_num = False
+                                if y0 >= footer_threshold:
+                                    # 匹配纯数字页码（1-3位）或"第X页"格式
+                                    import re
+                                    if re.match(r'^\d{1,3}$', text) or re.match(r'^第[\d一二三四五六七八九十]+页$', text):
+                                        is_page_num = True
+                                if not is_page_num:
+                                    page_contents.append({
+                                        'type': 'text',
+                                        'y0': y0,
+                                        'text': text,
+                                        'bold_ranges': frag['bold_ranges']
+                                    })
                     
                     elif block["type"] == 1:  # image block
                         # 图片块，后面单独处理
                         pass
-                    
-                    elif block["type"] == 2:  # table block
-                        # 表格块，提取表格内容
-                        table = block.get("table", [])
-                        if table:
-                            # 转换为Markdown表格
-                            md_table = "\n"
-                            for row_idx, row in enumerate(table):
-                                md_row = "|"
-                                for cell in row:
-                                    cell_text = cell.get("text", "").strip()
-                                    # 去重处理
-                                    cell_text = self._remove_duplicate_chars(cell_text)
-                                    md_row += f" {cell_text} |"
-                                md_row += "\n"
-                                md_table += md_row
-                                
-                                # 在表头后添加分隔线
-                                if row_idx == 0 and len(row) > 0:
-                                    md_table += "|" + " --- |" * len(row) + "\n"
-                            
-                            page_text += md_table + "\n"
                 
-                # 按y坐标排序并添加段落分隔
-                # 通过行间距判断段落边界（间距超过2.5倍行高认为是新段落）
-                all_text_lines.sort(key=lambda x: x['y0'])
+                # 按y坐标排序（混合表格和文本）
+                page_contents.sort(key=lambda x: x['y0'])
                 formatted_lines = []
                 prev_y0 = None
                 line_height = 18  # 估计的行高，增大以减少误判
                 
-                for line_info in all_text_lines:
-                    text = line_info['text']
-                    bold_ranges = line_info['bold_ranges']
-                    current_y0 = line_info['y0']
-                    
-                    # 判断是否需要分段（更严格的条件，减少误判）
-                    if prev_y0 is not None and current_y0 - prev_y0 > line_height * 2.5:
-                        formatted_lines.append("")  # 添加空行表示段落分隔
-                    
-                    # 格式化标题和加粗
-                    formatted_text = self._format_pdf_line(text, bold_ranges)
-                    formatted_lines.append(formatted_text)
-                    
-                    prev_y0 = current_y0
+                for content in page_contents:
+                    if content['type'] == 'table':
+                        # 表格直接添加，不进行段落分隔判断
+                        formatted_lines.append(content['content'])
+                        prev_y0 = None  # 表格后重置段落判断
+                    else:
+                        text = content['text']
+                        bold_ranges = content['bold_ranges']
+                        current_y0 = content['y0']
+                        
+                        # 判断是否需要分段（更严格的条件，减少误判）
+                        if prev_y0 is not None and current_y0 - prev_y0 > line_height * 2.5:
+                            formatted_lines.append("")  # 添加空行表示段落分隔
+                        
+                        # 格式化标题和加粗
+                        formatted_text = self._format_pdf_line(text, bold_ranges)
+                        formatted_lines.append(formatted_text)
+                        
+                        prev_y0 = current_y0
                 
                 page_text += "\n".join(formatted_lines) + "\n"
                 
@@ -804,7 +997,18 @@ class DocumentConverterService:
         return ''.join(result)
     
     def _format_pdf_line(self, text: str, bold_ranges: list = None) -> str:
-        """格式化PDF提取的单行文本，添加标题和加粗格式"""
+        """格式化 PDF 提取的单行文本，添加标题和加粗格式
+
+        识别中文文档标题结构（第X编、第X章、第X节、第X条）并转换为对应级别的
+        Markdown 标题；对非标题文本根据加粗范围添加 ** 加粗标记。
+
+        Args:
+            text: 原始文本行
+            bold_ranges: 加粗范围列表，每个元素为 (start, end) 元组
+
+        Returns:
+            str: 格式化后的 Markdown 文本
+        """
         if not text or not text.strip():
             return text
         
@@ -882,7 +1086,18 @@ class DocumentConverterService:
         return cleaned
     
     def _restore_custom_list_format(self, markdown: str, list_items: List[Tuple[str, str]]) -> str:
-        """恢复自定义列表格式"""
+        """恢复 DOCX 文档中的自定义列表格式
+
+        将 MarkItDown 提取的 Markdown 文本中的列表项，根据原始 DOCX 解析得到的
+        列表��级信息，还原为正确的缩进/层级格式。
+
+        Args:
+            markdown: MarkItDown 提取的原始 Markdown 文本
+            list_items: 列表项信息列表，每个元素为 (层级文本, 原始内容) 元组
+
+        Returns:
+            str: 列表格式恢复后的 Markdown 文本
+        """
         if not list_items:
             return markdown
         
