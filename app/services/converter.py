@@ -617,6 +617,7 @@ class DocumentConverterService:
         start_time = time.time()
         images = []
         markdown_text = ""
+        extracted_text_length = 0
         
         try:
             file_stream.seek(0)
@@ -629,6 +630,7 @@ class DocumentConverterService:
                 text_dict = page.get_text("dict")
                 
                 page_text = ""
+                page_text_count = 0
                 
                 # 用于存储所有内容（文本行和表格），按位置排序
                 page_contents = []
@@ -867,6 +869,7 @@ class DocumentConverterService:
                                         'text': text,
                                         'bold_ranges': frag['bold_ranges']
                                     })
+                                    page_text_count += len(text)
                     
                     elif block["type"] == 1:  # image block
                         # 图片块，后面单独处理
@@ -962,6 +965,7 @@ class DocumentConverterService:
                 if markdown_text:
                     markdown_text += "\n\n---\n\n"
                 markdown_text += page_text
+                extracted_text_length += page_text_count
             
             doc.close()
             
@@ -973,6 +977,13 @@ class DocumentConverterService:
                 "images": [],
                 "duration": round(time.time() - start_time, 2)
             }
+        
+        if enable_ocr and extracted_text_length < 100:
+            logger.info(f"[PDF 回退] 提取文本过少({extracted_text_length}字符)，启用整页 OCR 回退处理")
+            file_stream.seek(0)
+            return self._fallback_pdf_to_images(
+                file_stream, filename, image_mode, image_quality, max_image_size, enable_ocr, enable_llm
+            )
         
         duration = time.time() - start_time
         
