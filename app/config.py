@@ -34,8 +34,8 @@ class Settings(BaseSettings):
     OCR_ENABLED: bool = True
     OCR_LANGUAGE: str = "chi_sim+eng"
     OCR_TESSERACT_PATH: Optional[str] = None
-    OCR_MIN_LENGTH: int = 3
-    OCR_MIN_CONFIDENCE: float = 0.6
+    OCR_MIN_LENGTH: int = 1
+    OCR_MIN_CONFIDENCE: float = 0.3
     OCR_MAX_SYMBOL_RATIO: float = 0.5
     
     DEFAULT_IMAGE_QUALITY: int = 100

@@ -15,6 +15,7 @@ services:
     volumes:
       - ./volumes/logs:/app/logs
       - ./volumes/temp:/app/temp
+      - ./volumes/paddlex:/root/.paddlex
     depends_on:
       - redis
     restart: unless-stopped
@@ -30,6 +31,7 @@ services:
     volumes:
       - ./volumes/logs:/app/logs
       - ./volumes/temp:/app/temp
+      - ./volumes/paddlex:/root/.paddlex
     depends_on:
       - redis
     restart: unless-stopped

@@ -391,11 +391,13 @@ class PdfConverter:
             for page_num in range(len(doc)):
                 page = doc[page_num]
 
-                # 渲染为灰度图片，150 DPI
-                pix = page.get_pixmap(dpi=150, colorspace=fitz.csGRAY)
+                # 渲染为 RGB 图片，200 DPI 以提高 OCR 准确度
+                pix = page.get_pixmap(dpi=200, colorspace=fitz.csRGB)
                 img_data = pix.tobytes("png")
 
-                processed_bytes, img_ext = image_processor.compress_image(img_data, 100, max_image_size)
+                # OCR 回退处理时不压缩图片，保持原始质量
+                processed_bytes = img_data
+                img_ext = "png"
 
                 img_name = f"page_{page_num + 1}.png"
 

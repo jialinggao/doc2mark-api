@@ -18,6 +18,15 @@ RUN apt update && apt install -y --no-install-recommends \
     libreoffice-draw \
     libreoffice-impress \
     libreoffice-math \
+    libgomp1 \
+    libgthread-2.0-0 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libgl1 \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
