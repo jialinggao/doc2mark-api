@@ -1,6 +1,6 @@
 # Doc2MarkAPI
 
-基于 FastAPI、Redis + RQ、MarkItDown、OpenAI SDK、Tesseract OCR 引擎和 LibreOffice 构建的文档转 Markdown HTTP 服务。将 PDF、Word、PPT、Excel、图片等多种格式统一转换为 Markdown，支持旧版 .doc/.ppt/.xls 格式自动转换、OCR 图转文、多模态大模型图片描述、异步任务处理，提供 RESTful API 接口，支持 Docker 容器化部署。
+基于 FastAPI、Redis + RQ、MarkItDown、OpenAI SDK、PaddleOCR 3.7（PP-OCRv6）、Tesseract OCR 引擎和 LibreOffice 构建的文档转 Markdown HTTP 服务。将 PDF、Word、PPT、Excel、图片等多种格式统一转换为 Markdown，支持旧版 .doc/.ppt/.xls 格式自动转换、OCR 图转文（支持 GPU 加速）、多模态大模型图片描述、异步任务处理，提供 RESTful API 接口，支持 Docker 容器化部署。
 
 ## 功能特性
 
@@ -8,21 +8,23 @@
 |------|------|
 | 文档转换 | 支持 PDF、Word(.doc/.docx)、PPT(.ppt/.pptx)、Excel(.xls/.xlsx)、图片等 |
 | 旧版格式兼容 | .doc/.ppt/.xls 自动转换为新版格式（LibreOffice） |
-| OCR 图转文 | Tesseract 引擎，支持中英文识别 |
+| 智能 .doc 处理 | 自动识别并优化 HTML 包装的 .doc 格式 |
+| OCR 图转文 | PaddleOCR 3.7（PP-OCRv6）为主，Tesseract 为备，中英文识别 |
+| GPU 加速 | PaddleOCR 支持 GPU 加速（可选） |
 | 多模态图片描述 | 兼容 OpenAI SDK 的多模态模型 |
 | 同步/异步模式 | 小文件同步转换，大文件异步任务 |
 | 图片处理 | Base64 嵌入 / 占位符 / 外部链接三种模式 |
 | PDF 智能回退 | 扫描件 PDF 自动渲染为图片 |
 | 限流保护 | 防止 API 滥用 |
 | 监控面板 | 内置实时监控面板，无需额外部署 |
-| Docker 部署 | 三容器架构（API + Worker + Redis） |
+| 分离架构 | API 轻量容器 + Worker 完整容器（支持 CPU/GPU 版本） |
 
 ## 架构说明
 
 ### API 与 Worker 分工
 
-- **API 容器**：接收请求、校验、提交任务到 Redis 队列、返回响应，不执行转换计算
-- **Worker 容器**：执行文档转换（MarkItDown/OCR/LLM/图片处理），多进程并行
+- **API 容器**：轻量容器，仅接收请求、校验、提交任务到 Redis 队列、返回响应，不执行转换计算
+- **Worker 容器**：完整容器，执行文档转换（MarkItDown/OCR/LLM/图片处理），多进程并行，支持 CPU/GPU 两个版本
 
 ### 双队列架构
 
@@ -45,10 +47,22 @@
 
 ### Docker 部署（推荐）
 
+#### CPU 版本
 ```bash
 cd docker
 cp .env.example .env
 # 编辑 .env 配置 LLM 等参数
+docker-compose up -d --build
+```
+
+#### GPU 版本
+1. 确保宿主机已配置 NVIDIA 驱动和 nvidia-docker
+2. 编辑 `docker-compose.yml`，将 worker 的 dockerfile 改为 `docker/Dockerfile.worker.gpu`
+3. 取消 worker 的 `deploy.resources` GPU 配置注释
+4. 启动服务
+```bash
+cd docker
+cp .env.example .env
 docker-compose up -d --build
 ```
 
@@ -238,14 +252,17 @@ curl http://localhost:5926/api/metrics
 │   ├── models.py           # 数据模型
 │   └── run_worker.py       # Worker 入口（多进程）
 ├── docker/                 # Docker 配置
-│   ├── Dockerfile          # 生产镜像
+│   ├── Dockerfile.api      # API 轻量镜像
+│   ├── Dockerfile.worker   # Worker CPU 镜像
+│   ├── Dockerfile.worker.gpu # Worker GPU 镜像
 │   ├── docker-compose.yml  # 编排配置
 │   ├── .env                # 环境变量
 │   ├── .env.example        # 环境变量模板
 │   └── volumes/            # 数据挂载目录
 ├── docs/                   # 设计文档
 ├── tests/                  # 测试用例
-├── requirements.txt        # Python 依赖
+├── requirements.txt        # Worker Python 依赖
+├── requirements.api.txt    # API Python 依赖
 └── .dockerignore           # Docker 忽略文件
 ```
 
@@ -257,6 +274,8 @@ curl http://localhost:5926/api/metrics
 | Redis + RQ | Redis 8.6.2 / RQ >=2.8.0 |
 | MarkItDown | >=0.1.5 |
 | OpenAI SDK | >=2.36.0 |
+| PaddleOCR | 3.7.0 |
+| PaddlePaddle | 3.1.0 |
 | Tesseract | 5.x |
 | PyMuPDF | >=1.23.0 |
 | Python | 3.11 |
