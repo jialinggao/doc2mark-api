@@ -6,7 +6,7 @@ services:
   api:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.api
     container_name: doc2mark-api-api
     ports:
       - "5926:5926"
@@ -15,7 +15,6 @@ services:
     volumes:
       - ./volumes/logs:/app/logs
       - ./volumes/temp:/app/temp
-      - ./volumes/paddlex:/root/.paddlex
     depends_on:
       - redis
     restart: unless-stopped
@@ -24,7 +23,9 @@ services:
   worker:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.worker
+      # 如需GPU加速，将上面改为：dockerfile: docker/Dockerfile.worker.gpu
+      # 并取消下面 deploy 部分的注释
     container_name: doc2mark-api-worker
     env_file:
       - .env
@@ -36,6 +37,14 @@ services:
       - redis
     restart: unless-stopped
     command: python -m app.run_worker
+    # GPU版本取消下面注释
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   redis:
     image: redis:8.8-alpine
