@@ -1,0 +1,65 @@
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+WORKDIR /app
+
+# 避免tzdata交互式配置
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=Asia/Shanghai
+
+# 切换 apt 源为清华源
+RUN sed -i 's@archive.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list
+RUN sed -i 's@security.ubuntu.com@mirrors.tuna.tsinghua.edu.cn@g' /etc/apt/sources.list
+
+# 添加 deadsnakes PPA 安装 Python 3.11
+RUN apt update && apt install -y --no-install-recommends \
+    software-properties-common \
+    gnupg \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt update \
+    && apt install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3.11-distutils \
+    python3-pip \
+    tesseract-ocr \
+    tesseract-ocr-chi-sim \
+    tesseract-ocr-eng \
+    exiftool \
+    poppler-utils \
+    libreoffice \
+    libreoffice-writer \
+    libreoffice-base \
+    libreoffice-calc \
+    libreoffice-draw \
+    libreoffice-impress \
+    libreoffice-math \
+    libgomp1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgl1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置Python 3.11为默认
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3 && \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+
+# 先升级pip、setuptools和wheel
+RUN pip install --upgrade pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+COPY requirements.txt .
+
+# 安装依赖，会自动根据CUDA安装GPU版本的paddlepaddle
+RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
+
+# 卸载CPU版本paddlepaddle，安装GPU版本
+RUN pip uninstall -y paddlepaddle && \
+    pip install paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
+
+COPY app/ ./app/
+
+RUN mkdir -p temp logs
+
+EXPOSE 5926

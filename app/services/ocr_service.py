@@ -65,14 +65,33 @@ class OCRService:
             os.environ['FLAGS_use_onednn'] = 'False'
             os.environ['FLAGS_use_mkldnn_bf16'] = 'False'
             
+            # 检测GPU是否可用（仅用于日志）
+            use_gpu = False
+            try:
+                import paddle
+                if paddle.is_compiled_with_cuda():
+                    gpu_count = paddle.device.cuda.device_count()
+                    if gpu_count > 0:
+                        use_gpu = True
+                        logger.info(f"检测到 {gpu_count} 个GPU，PaddlePaddle将自动使用GPU")
+                    else:
+                        logger.info("未检测到GPU，使用CPU模式")
+                else:
+                    logger.info("PaddlePaddle未编译CUDA支持，使用CPU模式")
+            except ImportError:
+                logger.info("无法检测GPU状态，使用CPU模式")
+            except Exception as e:
+                logger.info(f"检测GPU时出错: {e}，使用CPU模式")
+            
             # 使用PaddleOCR 3.7的正确初始化方式
             # 禁用文档预处理和方向分类，只保留文本检测和识别
+            # PaddlePaddle会自动选择GPU/CPU，不需要显式指定
             self.ocr = PaddleOCR(
                 use_doc_orientation_classify=False,
                 use_doc_unwarping=False,
                 use_textline_orientation=False
             )
-            logger.info("PaddleOCR 初始化成功")
+            logger.info("PaddleOCR 初始化成功" + (" (GPU加速)" if use_gpu else ""))
             self._paddleocr_initialized = True
         except Exception as e:
             logger.error(f"PaddleOCR 初始化失败，将使用 Tesseract: {e}")
