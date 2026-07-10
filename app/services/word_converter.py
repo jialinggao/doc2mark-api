@@ -9,6 +9,7 @@ from docx import Document
 from docx.oxml.ns import qn
 from markitdown import MarkItDown
 from openai import OpenAI
+import html2text
 from app.config import settings
 from app.models import ImageMode
 from app.services.image_processor import image_processor
@@ -415,11 +416,12 @@ class WordConverter:
 
     主要功能：
     1. 支持 .doc (旧版 Word) 和 .docx (新版 Word) 格式
-    2. 使用 LibreOffice 转换旧版格式为新版
-    3. 使用 MarkItDown 进行文档转换
-    4. 识别和恢复自定义列表格式（中文数字、罗马数字等）
-    5. 处理图片提取和转换
-    6. 清理 Word 特殊字符
+    2. 支持 HTML 包装的 .doc 格式（MIME + HTML）
+    3. 使用 LibreOffice 转换旧版格式为新版
+    4. 使用 MarkItDown 或 html2text 进行文档转换
+    5. 识别和恢复自定义列表格式（中文数字、罗马数字等）
+    6. 处理图片提取和转换
+    7. 清理 Word 特殊字符
     """
 
     OLD_TO_NEW_FORMAT = {".doc": ".docx"}
@@ -430,6 +432,170 @@ class WordConverter:
         """
         self.md = self._initialize_markitdown()
         self.docx_list_parser = DocxListParser()
+        self.html2text_converter = self._initialize_html2text()
+
+    def _initialize_html2text(self):
+        """
+        初始化 html2text 转换器
+
+        Returns:
+            html2text.HTML2Text 对象
+        """
+        h = html2text.HTML2Text()
+        h.ignore_links = False
+        h.ignore_images = False
+        h.ignore_emphasis = False
+        h.body_width = 0  # 不自动换行
+        h.unicode_snob = True  # 使用 Unicode
+        return h
+
+    def _is_html_wrapped_doc(self, file_stream: BinaryIO) -> Tuple[bool, Optional[str]]:
+        """
+        检测是否是 HTML 包装的 .doc 文档
+
+        Args:
+            file_stream: 文件流
+
+        Returns:
+            (是否是 HTML 包装, 提取的 HTML 内容)
+        """
+        file_stream.seek(0)
+        # 读取前 10KB 来检测
+        content = file_stream.read(10240).decode('utf-8', errors='ignore')
+        file_stream.seek(0)
+
+        # 检测是否是 MIME 包装的 HTML
+        has_mime_version = 'Mime-Version:' in content
+        has_multipart = 'Content-Type: Multipart/related' in content
+        has_html_doctype = '<!DOCTYPE html' in content.lower()
+        has_office_namespace = 'xmlns:w="urn:schemas-microsoft-com:office:word"' in content
+
+        is_html_wrapped = (has_mime_version and has_multipart) or (has_html_doctype and has_office_namespace)
+
+        if is_html_wrapped:
+            # 读取完整内容
+            file_stream.seek(0)
+            full_content = file_stream.read().decode('utf-8', errors='ignore')
+            file_stream.seek(0)
+
+            # 提取 HTML 内容
+            html_content = self._extract_html_from_mime(full_content)
+            return True, html_content
+
+        return False, None
+
+    def _extract_html_from_mime(self, content: str) -> str:
+        """
+        从 MIME 格式中提取 HTML 内容
+
+        Args:
+            content: MIME 格式的内容
+
+        Returns:
+            提取的 HTML 内容
+        """
+        # 查找 HTML 部分开始
+        html_start = content.find('<!DOCTYPE html')
+        if html_start == -1:
+            html_start = content.find('<html')
+
+        if html_start != -1:
+            # 先取从 HTML 开始的内容
+            html_part = content[html_start:]
+            
+            # 查找 HTML 结束标签，在第一个 MIME 边界处截断
+            html_end_tag = html_part.find('</html>')
+            if html_end_tag != -1:
+                # 包含 </html> 标签
+                html_content = html_part[:html_end_tag + len('</html>')]
+                return html_content
+            
+            # 如果没找到 </html>，查找第一个 MIME 边界
+            mime_boundary = html_part.find('--NEXT.ITEM-BOUNDARY')
+            if mime_boundary != -1:
+                html_content = html_part[:mime_boundary]
+                return html_content
+            
+            return html_part
+
+        return content
+
+    def _clean_html_content(self, html_content: str) -> str:
+        """
+        清理 HTML 内容，移除不需要的元素
+
+        Args:
+            html_content: 原始 HTML 内容
+
+        Returns:
+            清理后的 HTML 内容
+        """
+        from bs4 import BeautifulSoup
+
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # 移除不需要的元素
+        elements_to_remove = [
+            '.share',
+            '.sets',
+            '.func',
+            '.wechat-qrcode',
+            '.article-qrcode',
+            '#share-1',
+            '#Canvas',
+            '.num_fs',
+            '.actfwzh',
+            '.gzh',
+            '.gudownload',
+            '.bot-btns-box',
+            '.print',
+            '.xxgk-download-box',
+            '.jcjy',
+            '#actdy',
+            '#zwxz',
+            'script',
+            'style'
+        ]
+
+        for selector in elements_to_remove:
+            for elem in soup.select(selector):
+                elem.decompose()
+
+        # 移除 style 属性（html2text 不需要）
+        for elem in soup.find_all(style=True):
+            del elem['style']
+
+        # 移除空的 div
+        for elem in soup.find_all('div'):
+            if not elem.get_text(strip=True) and not elem.find():
+                elem.decompose()
+
+        return str(soup)
+
+    def _convert_html_to_markdown(self, html_content: str) -> str:
+        """
+        将 HTML 转换为 Markdown
+
+        Args:
+            html_content: HTML 内容
+
+        Returns:
+            Markdown 内容
+        """
+        # 清理 HTML
+        try:
+            cleaned_html = self._clean_html_content(html_content)
+        except ImportError:
+            logger.warning("[Word转换] BeautifulSoup 未安装，跳过 HTML 清理")
+            cleaned_html = html_content
+
+        # 转换为 Markdown
+        markdown = self.html2text_converter.handle(cleaned_html)
+
+        # 清理多余的空行
+        markdown = re.sub(r'\n{3,}', '\n\n', markdown)
+
+        return markdown
 
     def _initialize_markitdown(self) -> MarkItDown:
         """
@@ -607,35 +773,48 @@ class WordConverter:
         start_time = time.time()
         ext = os.path.splitext(filename.lower())[1]
 
-        # 旧版 Word 格式转换
-        current_stream = file_stream
-        current_filename = filename
-        if ext in self.OLD_TO_NEW_FORMAT:
-            new_ext = self.OLD_TO_NEW_FORMAT[ext]
-            current_filename = filename[:-len(ext)] + new_ext
-            logger.info(f"[Word转换] 检测到旧版Word格式 {ext}，自动转换为 {new_ext}")
-            current_stream = self.convert_old_office_format(file_stream, filename, new_ext)
+        # 先检测是否是 HTML 包装的文档
+        is_html_wrapped, html_content = self._is_html_wrapped_doc(file_stream)
+        if is_html_wrapped and html_content:
+            logger.info(f"[Word转换] 检测到 HTML 包装的 .doc 文档，使用 HTML 转 Markdown 流程")
+            raw_markdown = self._convert_html_to_markdown(html_content)
+            images = []
+        else:
+            # 旧版 Word 格式转换
+            current_stream = file_stream
+            current_filename = filename
+            if ext in self.OLD_TO_NEW_FORMAT:
+                new_ext = self.OLD_TO_NEW_FORMAT[ext]
+                current_filename = filename[:-len(ext)] + new_ext
+                logger.info(f"[Word转换] 检测到旧版Word格式 {ext}，自动转换为 {new_ext}")
+                current_stream = self.convert_old_office_format(file_stream, filename, new_ext)
 
-        # 提取列表信息（仅对 .docx）
-        docx_list_items = []
-        if current_filename.lower().endswith('.docx'):
-            docx_list_items = self.extract_docx_list_items(current_stream)
+            # 提取列表信息（仅对 .docx）
+            docx_list_items = []
+            if current_filename.lower().endswith('.docx'):
+                docx_list_items = self.extract_docx_list_items(current_stream)
 
-        # 使用 MarkItDown 转换
-        result = self.md.convert(current_stream, file_path=current_filename, keep_data_uris=True)
-        raw_markdown = result.text_content
+            # 使用 MarkItDown 转换
+            result = self.md.convert(current_stream, file_path=current_filename, keep_data_uris=True)
+            raw_markdown = result.text_content
 
-        # 恢复列表格式
-        if docx_list_items:
-            raw_markdown = self.restore_custom_list_format(raw_markdown, docx_list_items)
+            # 恢复列表格式
+            if docx_list_items:
+                raw_markdown = self.restore_custom_list_format(raw_markdown, docx_list_items)
+
+            # 处理图片
+            markdown_text, images = image_processor.process_markdown_images(
+                raw_markdown, image_mode, image_quality, max_image_size, enable_ocr, enable_llm
+            )
 
         # 清理特殊字符
         raw_markdown = clean_word_special_chars(raw_markdown)
 
-        # 处理图片
-        markdown_text, images = image_processor.process_markdown_images(
-            raw_markdown, image_mode, image_quality, max_image_size, enable_ocr, enable_llm
-        )
+        # 处理图片（如果是 HTML 流程，在这里处理）
+        if is_html_wrapped and html_content:
+            markdown_text, images = image_processor.process_markdown_images(
+                raw_markdown, image_mode, image_quality, max_image_size, enable_ocr, enable_llm
+            )
 
         duration = time.time() - start_time
 
