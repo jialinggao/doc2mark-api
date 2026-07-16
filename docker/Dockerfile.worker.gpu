@@ -39,7 +39,16 @@ RUN apt update && apt install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgl1 \
+    openjdk-17-jre-headless \
+    openjdk-17-jdk-headless \
+    maven \
     && rm -rf /var/lib/apt/lists/*
+
+# 复制并编译 OFD 转换器
+COPY tools/ ./tools/
+WORKDIR /app/tools/ofd-converter
+RUN mvn clean package -q -DskipTests -Dmaven.repo.local=/tmp/maven_repo
+WORKDIR /app
 
 # 设置Python 3.11为默认
 RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
@@ -50,14 +59,11 @@ RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
 RUN pip install --upgrade pip setuptools wheel -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 COPY requirements.txt .
-
 # 安装依赖，会自动根据CUDA安装GPU版本的paddlepaddle
 RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-
 # 卸载CPU版本paddlepaddle，安装GPU版本
 RUN pip uninstall -y paddlepaddle && \
     pip install paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
-
 COPY app/ ./app/
 
 RUN mkdir -p temp logs

@@ -6,6 +6,7 @@ from app.services.excel_converter import excel_converter
 from app.services.pdf_converter import pdf_converter
 from app.services.word_converter import word_converter
 from app.services.general_converter import general_converter
+from app.services.ofd_converter import ofd_converter
 
 
 class DocumentConverterService:
@@ -65,6 +66,11 @@ class DocumentConverterService:
         elif ext == '.pdf':
             logger.info(f"[路由] PDF → pdf_converter: {filename}")
             return pdf_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
+
+        # OFD 文件路由（中国自主文档格式标准）
+        elif ext == '.ofd':
+            logger.info(f"[路由] OFD → ofd_converter: {filename}")
+            return ofd_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # Word 文件路由（支持 .doc 和 .docx）
         elif ext in ('.doc', '.docx'):

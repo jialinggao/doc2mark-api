@@ -46,7 +46,7 @@ async def convert_document(
         )
     
     allowed_extensions = [
-        "pdf", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
+        "pdf", "ofd", "doc", "docx", "ppt", "pptx", "xls", "xlsx",
         "jpg", "jpeg", "png", "gif", "bmp", "tiff",
         "txt", "md", "html", "xml"
     ]
@@ -310,6 +310,7 @@ async def get_supported_formats():
         "data": {
             "document": [
                 "pdf",
+                "ofd",
                 "doc",
                 "docx",
                 "ppt",

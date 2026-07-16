@@ -24,12 +24,20 @@ RUN apt update && apt install -y --no-install-recommends \
     libxext6 \
     libxrender-dev \
     libgl1 \
+    # 安装 Java 21 (Debian trixie 默认版本) 和 Maven 用于编译 OFD 转换器
+    openjdk-21-jre-headless \
+    openjdk-21-jdk-headless \
+    maven \
     && rm -rf /var/lib/apt/lists/*
 
+# 复制并编译 OFD 转换器
+COPY tools/ ./tools/
+WORKDIR /app/tools/ofd-converter
+RUN mvn clean package -q -DskipTests -Dmaven.repo.local=/tmp/maven_repo
+WORKDIR /app
+
 COPY requirements.txt .
-
 RUN pip install --no-cache-dir -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple
-
 COPY app/ ./app/
 
 RUN mkdir -p temp logs
