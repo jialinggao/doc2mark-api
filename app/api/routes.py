@@ -5,7 +5,6 @@ from app.config import settings
 from uuid import uuid4
 from rq import Queue
 from redis import Redis
-from app.workers.tasks import process_document_task
 from datetime import datetime
 from rq.job import Job
 import asyncio
@@ -13,7 +12,7 @@ import json
 import io
 import time
 from concurrent.futures import ThreadPoolExecutor
-from app.api.metrics import metrics_collector
+from app.utils.metrics import metrics_collector
 from loguru import logger
 
 
@@ -66,7 +65,7 @@ async def convert_document(
     queue = Queue(name="sync_conversion", connection=redis_conn)
 
     job = queue.enqueue(
-        process_document_task,
+        'app.workers.tasks.process_document_task',
         task_id=task_id,
         file_content=content,
         filename=file.filename or "unknown",
@@ -143,7 +142,7 @@ async def create_task(
     queue = Queue(name="async_conversion", connection=redis_conn)
     
     job = queue.enqueue(
-        process_document_task,
+        'app.workers.tasks.process_document_task',
         task_id=task_id,
         file_content=content,
         filename=file.filename or "unknown",

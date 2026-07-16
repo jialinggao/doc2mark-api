@@ -1,5 +1,5 @@
-from app.services.converter import converter_service
 from app.models import ImageMode
+from app.utils.metrics import metrics_collector
 import io
 import time
 import json
@@ -38,6 +38,7 @@ def process_document_task(
     file_stream = io.BytesIO(file_content)
     
     try:
+        from app.services.converter import converter_service
         result = converter_service.convert(
             file_stream=file_stream,
             filename=filename,
@@ -51,7 +52,6 @@ def process_document_task(
         duration = time.time() - start_time
         result["duration"] = round(duration, 2)
         
-        from app.api.metrics import metrics_collector
         task_type = metrics_collector._get_task_type(enable_ocr, enable_llm)
         metrics_collector.post_request_record(task_type, duration * 1000)
         

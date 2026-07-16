@@ -4,6 +4,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from collections import defaultdict
 from datetime import datetime, timedelta
 from app.config import settings
+from app.utils.metrics import metrics_collector
 from fastapi.middleware.cors import CORSMiddleware
 import time
 from loguru import logger
@@ -53,7 +54,6 @@ class MetricsCollectorMiddleware(BaseHTTPMiddleware):
         
         duration_ms = (time.time() - start_time) * 1000
         
-        from app.api.metrics import metrics_collector
         is_error = response.status_code >= 400
         metrics_collector.record_request(duration_ms, is_error)
         
