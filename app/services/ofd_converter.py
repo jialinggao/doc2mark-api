@@ -132,7 +132,6 @@ class OfdConverter:
                 if len(total_text) < 100:
                     need_full_ocr = True
                     full_ocr_reason = f"文本提取过少({len(total_text)}字符，可能是图片或向量图形PDF)"
-            logger.info(f"aaaaaaaaaaaaaaaaaa{full_ocr_reason}{need_full_ocr}")
             if need_full_ocr:
                 logger.info(f"[OFD] 检测到需要全文OCR: {full_ocr_reason}")
 
@@ -156,7 +155,8 @@ class OfdConverter:
                             img_name, img_data, "png", image_mode, True, enable_llm,
                             width=pix.width, height=pix.height
                         )
-                        images.append(image_info)
+                        if image_info:
+                            images.append(image_info)
                         page_text = f"## 第 {page_num + 1} 页\n\n" + image_block + "\n"
                         
                         # 页面分隔符
@@ -418,7 +418,8 @@ class OfdConverter:
                         img_name, processed_bytes, img_ext, image_mode, enable_ocr, enable_llm
                     )
 
-                    images.append(image_info)
+                    if image_info:
+                        images.append(image_info)
                     page_text += "\n\n" + image_block
 
                 # 添加到最终 Markdown

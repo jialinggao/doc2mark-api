@@ -7,6 +7,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.api
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
     container_name: doc2mark-api-api
     ports:
       - "5926:5926"
@@ -24,6 +27,9 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
+      args:
+        HTTP_PROXY: ${HTTP_PROXY:-}
+        HTTPS_PROXY: ${HTTPS_PROXY:-}
       # 如需GPU加速，将上面改为：dockerfile: docker/Dockerfile.worker.gpu
       # 并取消下面 deploy 部分的注释
     container_name: doc2mark-api-worker

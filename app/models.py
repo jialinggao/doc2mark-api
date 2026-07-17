@@ -8,6 +8,7 @@ class ImageMode(str, Enum):
     BASE64 = "base64"
     PLACEHOLDER = "placeholder"
     EXTERNAL = "external"
+    NONE = "none"
 
 
 class TaskStatus(str, Enum):

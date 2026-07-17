@@ -2,6 +2,27 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+ARG HTTP_PROXY=""
+ARG HTTPS_PROXY=""
+RUN if [ -n "$HTTP_PROXY" ]; then \
+        export HTTP_PROXY="$HTTP_PROXY"; \
+        export http_proxy="$HTTP_PROXY"; \
+        echo 'Acquire::http::Proxy "'"$HTTP_PROXY"'";' >> /etc/apt/apt.conf.d/00proxy; \
+        _host_port="${HTTP_PROXY#*://}"; \
+        _host="${_host_port%%:*}"; \
+        _port="${_host_port##*:}"; \
+        echo "-Dhttp.proxyHost=$_host -Dhttp.proxyPort=$_port" > /tmp/mvn_proxy_args; \
+    fi; \
+    if [ -n "$HTTPS_PROXY" ]; then \
+        export HTTPS_PROXY="$HTTPS_PROXY"; \
+        export https_proxy="$HTTPS_PROXY"; \
+        echo 'Acquire::https::Proxy "'"$HTTPS_PROXY"'";' >> /etc/apt/apt.conf.d/00proxy; \
+        _host_port="${HTTPS_PROXY#*://}"; \
+        _host="${_host_port%%:*}"; \
+        _port="${_host_port##*:}"; \
+        echo "-Dhttps.proxyHost=$_host -Dhttps.proxyPort=$_port" >> /tmp/mvn_proxy_args; \
+    fi
+
 # 切换 apt 源为清华源（Debian trixie DEB822 格式）
 RUN printf 'Types: deb\nURIs: https://mirrors.tuna.tsinghua.edu.cn/debian\nSuites: trixie trixie-updates trixie-backports\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: https://mirrors.tuna.tsinghua.edu.cn/debian-security\nSuites: trixie-security\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' > /etc/apt/sources.list.d/debian.sources
 
@@ -33,7 +54,7 @@ RUN apt update && apt install -y --no-install-recommends \
 # 复制并编译 OFD 转换器
 COPY tools/ ./tools/
 WORKDIR /app/tools/ofd-converter
-RUN mvn clean package -q -DskipTests -Dmaven.repo.local=/tmp/maven_repo
+RUN mvn clean package -q -DskipTests -Dmaven.repo.local=/tmp/maven_repo $(cat /tmp/mvn_proxy_args 2>/dev/null)
 WORKDIR /app
 
 COPY requirements.txt .

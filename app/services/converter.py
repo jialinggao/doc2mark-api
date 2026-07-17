@@ -7,8 +7,6 @@ from app.services.pdf_converter import pdf_converter
 from app.services.word_converter import word_converter
 from app.services.general_converter import general_converter
 from app.services.ofd_converter import ofd_converter
-
-
 class DocumentConverterService:
     """
     文档转换服务 - 路由入口
@@ -20,7 +18,7 @@ class DocumentConverterService:
 
     路由逻辑：
     - .xls, .xlsx → ExcelConverter (专用解析器)
-    - .pdf → PdfConverter (PyMuPDF 专用处理)
+    - .pdf → PdfConverter (PyMuPDF 专用处理) 或 PdfStructureConverter (PP-StructureV3，实验性)
     - .doc, .docx → WordConverter (支持自定义列表格式)
     - 其他格式 → GeneralConverter (MarkItDown 通用处理)
     """
@@ -64,8 +62,13 @@ class DocumentConverterService:
 
         # PDF 文件路由
         elif ext == '.pdf':
-            logger.info(f"[路由] PDF → pdf_converter: {filename}")
-            return pdf_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
+            # 使用 PP-StructureV3 处理 PDF（如需切换回 PyMuPDF，将下面两行注释掉，取消注释 pdf_converter 部分）
+            logger.info(f"[路由] PDF → pdf_structure_converter (PP-StructureV3): {filename}")
+            from app.services.pdf_structure_converter import pdf_structure_converter
+            return pdf_structure_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
+            # 原 PyMuPDF 方案（取消注释下面两行，注释掉上面三行即可切换）
+            # logger.info(f"[路由] PDF → pdf_converter: {filename}")
+            # return pdf_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # OFD 文件路由（中国自主文档格式标准）
         elif ext == '.ofd':

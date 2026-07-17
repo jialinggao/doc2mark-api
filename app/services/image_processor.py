@@ -1,7 +1,7 @@
 import base64
 import io
 import re
-from typing import BinaryIO, Tuple, List, Dict
+from typing import BinaryIO, Tuple, List, Dict, Optional
 from PIL import Image
 from loguru import logger
 from app.models import ImageMode
@@ -54,6 +54,9 @@ class ImageProcessor:
         elif image_mode == ImageMode.EXTERNAL:
             return f"**[图片 - {img_name}]**\n\n![{img_name}](images/{img_name})\n\n"
         
+        elif image_mode == ImageMode.NONE:
+            return ""
+        
         return ""
 
     def build_image_block(
@@ -66,7 +69,28 @@ class ImageProcessor:
         enable_llm: bool = False,
         width: int = 0,
         height: int = 0
-    ) -> Tuple[str, Dict]:
+    ) -> Tuple[str, Optional[Dict]]:
+        image_block = ""
+
+        # NONE 模式：只做 OCR/LLM，不生成图片信息
+        if image_mode == ImageMode.NONE:
+            if enable_ocr and settings.OCR_ENABLED:
+                ocr_text = ocr_service.extract_text_from_image(processed_bytes)
+                if ocr_text:
+                    clean_text = ocr_service.clean_ocr_text(ocr_text)
+                    image_block += f"**[OCR 识别 - {img_name}]**\n\n{clean_text}\n\n"
+                else:
+                    image_block += f"**[OCR 识别 - {img_name}]**\n\n（未识别出有效文字）\n\n"
+
+            if enable_llm and settings.ENABLE_LLM:
+                llm_desc = llm_service.describe_image(io.BytesIO(processed_bytes), f"image/{img_ext}")
+                if llm_desc:
+                    image_block += f"**[LLM 描述 - {img_name}]**\n\n{llm_desc}\n\n"
+                else:
+                    image_block += f"**[LLM 描述 - {img_name}]**\n\n（描述生成失败）\n\n"
+
+            return image_block, None
+
         image_info = {
             "name": img_name,
             "content": f"data:image/{img_ext};base64,{base64.b64encode(processed_bytes).decode()}",
@@ -132,7 +156,8 @@ class ImageProcessor:
                 img_name, processed_bytes, img_ext, image_mode, enable_ocr, enable_llm
             )
             
-            images.append(image_info)
+            if image_info:
+                images.append(image_info)
             
             original_base64_uri = f"![{alt_text}](data:image/{img_type};base64,{base64_data})"
             result_text = result_text.replace(original_base64_uri, image_block, 1)

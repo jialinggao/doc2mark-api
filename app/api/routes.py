@@ -33,7 +33,7 @@ async def convert_document(
     file: UploadFile = File(..., description="要转换的文件（最大50MB）"),
     enable_ocr: bool = Form(False, description="是否启用OCR图转文"),
     enable_llm: bool = Form(False, description="是否启用多模态大模型图片描述"),
-    image_mode: ImageMode = Form(ImageMode.BASE64, description="图片处理模式：base64/embed, placeholder/占位符, external/外部链接"),
+    image_mode: ImageMode = Form(ImageMode.BASE64, description="图片处理模式：base64/embed, placeholder/占位符, external/外部链接, none/不显示图片"),
     image_quality: int = Form(100, description="图片压缩质量（1-100，仅jpg有效）"),
     max_image_size: int = Form(-1, description="图片最大边长像素，-1表示不缩放")
 ):
@@ -121,7 +121,7 @@ async def create_task(
     file: UploadFile = File(..., description="要转换的文件（最大50MB）"),
     enable_ocr: bool = Form(False, description="是否启用OCR图转文"),
     enable_llm: bool = Form(False, description="是否启用多模态大模型图片描述"),
-    image_mode: ImageMode = Form(ImageMode.BASE64, description="图片处理模式：base64/embed, placeholder/占位符, external/外部链接"),
+    image_mode: ImageMode = Form(ImageMode.BASE64, description="图片处理模式：base64/embed, placeholder/占位符, external/外部链接, none/不显示图片"),
     image_quality: int = Form(100, description="图片压缩质量（1-100，仅jpg有效）"),
     max_image_size: int = Form(-1, description="图片最大边长像素，-1表示不缩放"),
     callback_url: str = Form(None, description="任务完成后的回调URL")

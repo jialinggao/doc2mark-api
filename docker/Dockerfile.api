@@ -2,6 +2,19 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+ARG HTTP_PROXY=""
+ARG HTTPS_PROXY=""
+RUN if [ -n "$HTTP_PROXY" ]; then \
+        export HTTP_PROXY="$HTTP_PROXY"; \
+        export http_proxy="$HTTP_PROXY"; \
+        echo 'Acquire::http::Proxy "'"$HTTP_PROXY"'";' >> /etc/apt/apt.conf.d/00proxy; \
+    fi; \
+    if [ -n "$HTTPS_PROXY" ]; then \
+        export HTTPS_PROXY="$HTTPS_PROXY"; \
+        export https_proxy="$HTTPS_PROXY"; \
+        echo 'Acquire::https::Proxy "'"$HTTPS_PROXY"'";' >> /etc/apt/apt.conf.d/00proxy; \
+    fi
+
 # 切换 apt 源为清华源（Debian trixie DEB822 格式）
 RUN printf 'Types: deb\nURIs: https://mirrors.tuna.tsinghua.edu.cn/debian\nSuites: trixie trixie-updates trixie-backports\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n\nTypes: deb\nURIs: https://mirrors.tuna.tsinghua.edu.cn/debian-security\nSuites: trixie-security\nComponents: main contrib non-free non-free-firmware\nSigned-By: /usr/share/keyrings/debian-archive-keyring.gpg\n' > /etc/apt/sources.list.d/debian.sources
 

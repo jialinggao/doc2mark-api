@@ -124,7 +124,7 @@ class OCRService:
         """
         if self.use_paddleocr and not self._paddleocr_initialized:
             self._initialize_paddleocr()
-        elif not self._tesseract_initialized:
+        elif not self.use_paddleocr and not self._tesseract_initialized:
             self._initialize_tesseract()
     
     def extract_text_from_image(self, image_data: bytes) -> Optional[str]:

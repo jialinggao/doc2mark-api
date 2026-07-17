@@ -317,7 +317,8 @@ class PdfConverter:
                         img_name, processed_bytes, img_ext, image_mode, enable_ocr, enable_llm
                     )
 
-                    images.append(image_info)
+                    if image_info:
+                        images.append(image_info)
                     page_text += "\n\n" + image_block
 
                 # 添加到最终 Markdown
@@ -407,7 +408,8 @@ class PdfConverter:
                     width=pix.width, height=pix.height
                 )
 
-                images.append(image_info)
+                if image_info:
+                    images.append(image_info)
 
                 # 添加页标题
                 image_block = f"## 第 {page_num + 1} 页\n\n" + image_block
