@@ -54,6 +54,7 @@ RUN apt update && apt install -y --no-install-recommends \
     libreoffice-draw \
     libreoffice-impress \
     libreoffice-math \
+    fonts-noto-cjk \
     libgomp1 \
     libglib2.0-0 \
     libsm6 \
