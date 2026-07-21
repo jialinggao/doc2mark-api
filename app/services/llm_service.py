@@ -1,3 +1,4 @@
+import time
 from openai import OpenAI
 from app.config import settings
 from typing import Optional, BinaryIO
@@ -8,27 +9,34 @@ from loguru import logger
 
 class LLMService:
     def __init__(self):
-        self.client = None
-        self._init_client()
+        self._client = None
+        self._initialized = False
     
-    def _init_client(self):
-        logger.info(f"LLM initialization check - ENABLE_LLM: {settings.ENABLE_LLM}")
-        logger.info(f"LLM initialization check - LLM_BASE_URL: {settings.LLM_BASE_URL}")
-        logger.info(f"LLM initialization check - LLM_MODEL: {settings.LLM_MODEL}")
+    def _ensure_client(self):
+        """延迟初始化 LLM 客户端，首次使用时才创建"""
+        if self._initialized:
+            return
+        
+        self._initialized = True
         
         if not settings.ENABLE_LLM:
-            logger.info("LLM is disabled, skipping client initialization")
+            logger.debug("LLM is disabled, skipping client initialization")
             return
         
         try:
-            self.client = OpenAI(
+            self._client = OpenAI(
                 base_url=settings.LLM_BASE_URL,
                 api_key=settings.LLM_API_KEY or "sk-local-model"
             )
-            logger.info(f"LLM client initialized successfully: {settings.LLM_BASE_URL}, model: {settings.LLM_MODEL}")
+            logger.info(f"LLM client initialized: {settings.LLM_BASE_URL}, model: {settings.LLM_MODEL}")
         except Exception as e:
             logger.error(f"Failed to initialize LLM client: {e}")
-            self.client = None
+            self._client = None
+
+    @property
+    def client(self):
+        self._ensure_client()
+        return self._client
     
     def _parse_extra_body(self) -> dict:
         """解析 extra_body 配置参数，从环境变量读取所有扩展参数"""
@@ -69,7 +77,10 @@ class LLMService:
         content_type: str = "image/jpeg",
         prompt: Optional[str] = None
     ) -> str:
+        _t0 = time.time()
+        logger.info("[LLMService.describe_image] enter: content_type={}, prompt_len={}", content_type, len(prompt) if prompt else 0)
         if not self.client:
+            logger.info("[LLMService.describe_image] exit: LLM disabled, duration={:.3f}s", time.time() - _t0)
             return ""
         
         try:
@@ -107,12 +118,15 @@ class LLMService:
             stream = settings.LLM_STREAM
             
             if stream:
-                return self._stream_request(messages, extra_body, extra_params)
+                result = self._stream_request(messages, extra_body, extra_params)
             else:
-                return self._non_stream_request(messages, extra_body, extra_params)
+                result = self._non_stream_request(messages, extra_body, extra_params)
+            
+            logger.info("[LLMService.describe_image] exit: result_len={}, duration={:.3f}s", len(result), time.time() - _t0)
+            return result
         
         except Exception as e:
-            logger.error(f"LLM request failed: {e}")
+            logger.error("[LLMService.describe_image] exit: error={}, duration={:.3f}s", e, time.time() - _t0)
             return ""
     
     def _stream_request(self, messages: list, extra_body: dict, extra_params: dict = None) -> str:

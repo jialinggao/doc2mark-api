@@ -430,7 +430,7 @@ class WordConverter:
         """
         初始化 Word 转换器
         """
-        self.md = self._initialize_markitdown()
+        self._md = None
         self.docx_list_parser = DocxListParser()
         self.html2text_converter = self._initialize_html2text()
 
@@ -596,6 +596,13 @@ class WordConverter:
         markdown = re.sub(r'\n{3,}', '\n\n', markdown)
 
         return markdown
+
+    @property
+    def md(self):
+        """延迟初始化 MarkItDown 实例"""
+        if self._md is None:
+            self._md = self._initialize_markitdown()
+        return self._md
 
     def _initialize_markitdown(self) -> MarkItDown:
         """

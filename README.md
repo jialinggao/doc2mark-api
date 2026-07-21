@@ -1,6 +1,6 @@
 # Doc2MarkAPI
 
-基于 FastAPI、Redis + RQ、MarkItDown、OpenAI SDK、PaddleOCR 3.7（PP-OCRv6）、Tesseract OCR 引擎和 LibreOffice 构建的文档转 Markdown HTTP 服务。将 PDF、Word、PPT、Excel、图片等多种格式统一转换为 Markdown，支持旧版 .doc/.ppt/.xls 格式自动转换、OCR 图转文（支持 GPU 加速）、多模态大模型图片描述、异步任务处理，提供 RESTful API 接口，支持 Docker 容器化部署。
+基于 FastAPI、Redis + RQ、MarkItDown、OpenAI SDK、PaddleOCR 3.7（PP-OCRv6）和 LibreOffice 构建的文档转 Markdown HTTP 服务。将 PDF、Word、PPT、Excel、图片等多种格式统一转换为 Markdown，支持旧版 .doc/.ppt/.xls 格式自动转换、OCR 图转文（支持 GPU 加速）、多模态大模型图片描述、异步任务处理，提供 RESTful API 接口，支持 Docker 容器化部署。
 
 ## 功能特性
 
@@ -9,38 +9,68 @@
 | 文档转换 | 支持 PDF、Word(.doc/.docx)、PPT(.ppt/.pptx)、Excel(.xls/.xlsx)、图片等 |
 | 旧版格式兼容 | .doc/.ppt/.xls 自动转换为新版格式（LibreOffice） |
 | 智能 .doc 处理 | 自动识别并优化 HTML 包装的 .doc 格式 |
-| OCR 图转文 | PaddleOCR 3.7（PP-OCRv6）为主，Tesseract 为备，中英文识别 |
-| GPU 加速 | PaddleOCR 支持 GPU 加速（可选） |
+| OCR 图转文 | PaddleOCR 3.7（PP-OCRv6），中英文识别，支持 GPU 加速 |
 | 多模态图片描述 | 兼容 OpenAI SDK 的多模态模型 |
 | 同步/异步模式 | 小文件同步转换，大文件异步任务 |
-| 图片处理 | Base64 嵌入 / 占位符 / 外部链接三种模式 |
+| 图片处理 | Base64 嵌入 / 占位符 / 外部链接 / 无图片四种模式 |
 | PDF 智能回退 | 扫描件 PDF 自动渲染为图片 |
 | 限流保护 | 防止 API 滥用 |
 | 监控面板 | 内置实时监控面板，无需额外部署 |
 | 分离架构 | API 轻量容器 + Worker 完整容器（支持 CPU/GPU 版本） |
+| 引擎进程隔离 | OCR（PaddleOCR）和结构分析（PP-StructureV3）独立进程运行，通过 Unix Socket 与 Worker 通信 |
+| 资源预加载 | 重量级资源在 Worker 进程 fork 前统一初始化，子进程通过写时复制共享，避免重复加载 |
+| 引擎自动恢复 | 监控线程实时检测引擎进程状态，异常退出自动重启 |
 
 ## 架构说明
 
 ### API 与 Worker 分工
 
 - **API 容器**：轻量容器，仅接收请求、校验、提交任务到 Redis 队列、返回响应，不执行转换计算
-- **Worker 容器**：完整容器，执行文档转换（MarkItDown/OCR/LLM/图片处理），多进程并行，支持 CPU/GPU 两个版本
+- **Worker 容器**：完整容器，执行文档转换（MarkItDown/OCR/LLM/图片处理），支持 CPU/GPU 两个版本
 
-### 双队列架构
+### 引擎进程架构
+
+Worker 容器内运行三个独立进程：
+
+```
+run_worker.py（主进程）
+  ├── OCR Engine Process（PaddleOCR）
+  │   └── Unix Socket: /tmp/ocr.sock
+  ├── Structure Engine Process（PP-StructureV3）
+  │   └── Unix Socket: /tmp/structure.sock
+  ├── Engine Monitor Thread（崩溃自动重启）
+  └── Worker Process（监听 sync_conversion + async_conversion 双队列）
+```
+
+- **OCR 引擎**：独立进程运行 PaddleOCR，所有 Worker 通过 Unix Socket 共享同一实例，避免 GPU 资源重复初始化
+- **Structure 引擎**：独立进程运行 PP-StructureV3，提供 PDF 版面分析、表格识别、印章识别能力
+- **引擎监控**：守护线程每 10 秒检查引擎进程状态，异常退出时自动重启，保障服务稳定性
+
+### 队列架构
 
 | 队列 | 用途 | Worker 进程数 |
 |------|------|--------------|
-| `sync_conversion` | 同步接口提交的任务（需快速响应） | SYNC_WORKER_COUNT（默认 2） |
-| `async_conversion` | 异步接口提交的任务（可容忍延迟） | ASYNC_WORKER_COUNT（默认 4） |
+| `sync_conversion` | 同步接口提交的任务（需快速响应） | SYNC_WORKER_COUNT（默认 1） |
+| `async_conversion` | 异步接口提交的任务（可容忍延迟） | 合并到同一 Worker 进程 |
 
-同步任务有专属 Worker 待命，不会被异步任务阻塞。
+Worker 进程同时监听 `sync_conversion` 和 `async_conversion` 两个队列，确保同步任务不会被异步任务阻塞。
+
+### 资源预加载
+
+Worker 主进程在 fork 子进程前调用 `_preload_worker_resources()` 初始化以下资源：
+- 所有转换器模块（PDF、Word、PPT、Excel、图片、OFD）
+- MarkItDown 实例
+- LLM 客户端
+- 各模块依赖的图片处理器、OCRFallback 等
+
+子进程通过写时复制（Copy-on-Write）继承预加载的资源，避免每个任务重复初始化。
 
 ### 同步接口流程
 
 ```
 客户端 → API 提交到 sync_conversion 队列 → BLPOP 阻塞等待结果 → 返回响应
                                               ↓
-                          sync Worker 取任务 → 执行转换 → LPUSH 结果通知
+                 Worker 取任务 → 通过 Unix Socket 调用引擎 → 执行转换 → LPUSH 结果通知
 ```
 
 ## 快速开始
@@ -197,7 +227,6 @@ curl http://localhost:5926/api/metrics
 | 参数 | 说明 | 默认值 |
 |------|------|--------|
 | `OCR_ENABLED` | 启用 OCR | true |
-| `OCR_LANGUAGE` | OCR 语言 | chi_sim+eng |
 
 ### 服务限制
 
@@ -212,8 +241,7 @@ curl http://localhost:5926/api/metrics
 |------|------|--------|
 | `SYNC_TASK_TIMEOUT` | 同步任务等待超时（秒） | 300 |
 | `ASYNC_TASK_TIMEOUT` | 异步任务执行超时（秒） | 21600 |
-| `SYNC_WORKER_COUNT` | 同步 Worker 进程数 | 2 |
-| `ASYNC_WORKER_COUNT` | 异步 Worker 进程数 | 4 |
+| `SYNC_WORKER_COUNT` | Worker 进程数 | 1 |
 
 ## 日志系统
 
@@ -232,6 +260,7 @@ curl http://localhost:5926/api/metrics
 | `base64` | `![描述](data:image/png;base64,...)` | 本地笔记、单文件分发 |
 | `placeholder` | `[图片：描述]` | 知识库、语义检索 |
 | `external` | `![描述](images/image_001.png)` | Web 预览 |
+| `none` | 完全隐藏，不输出任何图片标记 | 纯文本场景 |
 
 ## 项目结构
 
@@ -239,9 +268,24 @@ curl http://localhost:5926/api/metrics
 ├── app/                    # 应用代码
 │   ├── api/                # API 路由和中间件
 │   │   ├── routes.py       # API 接口定义
-│   │   ├── middleware.py    # 中间件（限流、访问日志、CORS）
-│   │   └── metrics.py      # 指标收集
-│   ├── services/           # 核心服务（转换、OCR、LLM）
+│   │   ├── middleware.py   # 中间件（限流、访问日志、CORS）
+│   │   └── metrics.py     # 指标收集
+│   ├── services/           # 核心服务
+│   │   ├── converter.py         # 统一转换入口（路由分发）
+│   │   ├── pdf_converter.py     # PDF 转换（含 OCR 回退）
+│   │   ├── pdf_structure_converter.py # PP-StructureV3 客户端代理
+│   │   ├── word_converter.py    # Word 转换
+│   │   ├── ppt_converter.py     # PPT 转换
+│   │   ├── excel_converter.py   # Excel 转换
+│   │   ├── image_converter.py   # 图片转换
+│   │   ├── ofd_converter.py     # OFD 转换
+│   │   ├── general_converter.py # 通用转换器
+│   │   ├── ocr_engine.py        # OCR 引擎进程（PaddleOCR）
+│   │   ├── structure_engine.py  # Structure 引擎进程（PP-StructureV3）
+│   │   ├── ocr_service.py       # OCR 客户端代理
+│   │   ├── ocr_fallback.py      # OCR 回退处理
+│   │   ├── llm_service.py       # LLM 客户端
+│   │   └── image_processor.py   # 图片处理
 │   ├── workers/            # 异步任务
 │   │   └── tasks.py        # 任务执行 + 结果通知
 │   ├── utils/              # 工具模块
@@ -250,7 +294,7 @@ curl http://localhost:5926/api/metrics
 │   ├── main.py             # API 入口
 │   ├── config.py           # 配置
 │   ├── models.py           # 数据模型
-│   └── run_worker.py       # Worker 入口（多进程）
+│   └── run_worker.py       # Worker 入口（引擎进程 + Worker 进程）
 ├── docker/                 # Docker 配置
 │   ├── Dockerfile.api      # API 轻量镜像
 │   ├── Dockerfile.worker   # Worker CPU 镜像
@@ -276,7 +320,6 @@ curl http://localhost:5926/api/metrics
 | OpenAI SDK | >=2.36.0 |
 | PaddleOCR | 3.7.0 |
 | PaddlePaddle | 3.1.0 |
-| Tesseract | 5.x |
 | PyMuPDF | >=1.23.0 |
 | Python | 3.11 |
 

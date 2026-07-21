@@ -42,9 +42,6 @@ RUN apt update && apt install -y --no-install-recommends \
     python3.11-dev \
     python3.11-distutils \
     python3-pip \
-    tesseract-ocr \
-    tesseract-ocr-chi-sim \
-    tesseract-ocr-eng \
     exiftool \
     poppler-utils \
     libreoffice \

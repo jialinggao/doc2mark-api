@@ -4,6 +4,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from typing import BinaryIO, Tuple, List, Dict, Optional
 from PIL import Image
 import fitz  # PyMuPDF
@@ -138,6 +139,9 @@ class ImageProcessor:
         width: int = 0,
         height: int = 0
     ) -> Tuple[str, Optional[Dict]]:
+        _t0 = time.time()
+        logger.debug("[ImageProcessor.build_image_block] enter: img_name={}, image_mode={}, enable_ocr={}, enable_llm={}, size={}x{}",
+                      img_name, image_mode, enable_ocr, enable_llm, width, height)
         image_block = ""
 
         # NONE 模式：只做 OCR/LLM，不生成图片信息
@@ -184,7 +188,9 @@ class ImageProcessor:
                 image_block += f"{llm_desc}\n\n"
         
         image_block += self.format_image_by_mode(img_name, image_mode, image_info)
-        
+
+        logger.debug("[ImageProcessor.build_image_block] exit: img_name={}, block_len={}, has_image={}, duration={:.3f}s",
+                      img_name, len(image_block), image_info is not None, time.time() - _t0)
         return image_block, image_info
 
     def process_markdown_images(
@@ -196,8 +202,12 @@ class ImageProcessor:
         enable_ocr: bool,
         enable_llm: bool
     ) -> Tuple[str, List[Dict]]:
+        _t0 = time.time()
         image_pattern = r'!\[([^\]]*)\]\(data:image/([\w.+-]+);base64,([A-Za-z0-9+/=]+)\)'
         image_matches = re.findall(image_pattern, markdown_text)
+
+        logger.info("[ImageProcessor.process_markdown_images] enter: image_count={}, image_mode={}, enable_ocr={}, enable_llm={}",
+                     len(image_matches), image_mode, enable_ocr, enable_llm)
         
         images = []
         result_text = markdown_text
@@ -228,16 +238,28 @@ class ImageProcessor:
             original_base64_uri = f"![{alt_text}](data:image/{original_img_type};base64,{base64_data})"
             result_text = result_text.replace(original_base64_uri, image_block, 1)
         
+        logger.info("[ImageProcessor.process_markdown_images] exit: processed={}/{} images, result_len={}, duration={:.3f}s",
+                     len(images), len(image_matches), len(result_text), time.time() - _t0)
         return result_text, images
 
     def insert_image_blocks(self, markdown_text: str, image_blocks: list) -> str:
+        _t0 = time.time()
+        logger.info("[ImageProcessor.insert_image_blocks] enter: paragraph_count={}, image_count={}, text_len={}",
+                     len(re.split(r'\n\n+', markdown_text.strip())) if markdown_text.strip() else 0,
+                     len(image_blocks), len(markdown_text))
         paragraphs = re.split(r'\n\n+', markdown_text.strip())
         
         if len(paragraphs) <= 1:
             if markdown_text:
-                return markdown_text + "\n\n---\n\n" + "\n\n---\n\n".join(image_blocks)
+                result = markdown_text + "\n\n---\n\n" + "\n\n---\n\n".join(image_blocks)
+                logger.info("[ImageProcessor.insert_image_blocks] exit: result_len={}, duration={:.3f}s",
+                             len(result), time.time() - _t0)
+                return result
             else:
-                return "\n\n---\n\n".join(image_blocks)
+                result = "\n\n---\n\n".join(image_blocks)
+                logger.info("[ImageProcessor.insert_image_blocks] exit: result_len={}, duration={:.3f}s",
+                             len(result), time.time() - _t0)
+                return result
         
         num_paragraphs = len(paragraphs)
         num_images = len(image_blocks)
@@ -262,7 +284,10 @@ class ImageProcessor:
             result.append("---")
             result.append("\n\n---\n\n".join(image_blocks[image_idx:]))
         
-        return "\n\n".join(result)
+        result = "\n\n".join(result)
+        logger.info("[ImageProcessor.insert_image_blocks] exit: result_len={}, duration={:.3f}s",
+                     len(result), time.time() - _t0)
+        return result
 
 
 image_processor = ImageProcessor()

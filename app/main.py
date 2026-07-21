@@ -13,7 +13,7 @@ logger = setup_logging(log_level=settings.LOG_LEVEL)
 
 app = FastAPI(
     title="Doc2MarkAPI",
-    description="基于 FastAPI、Redis + RQ、MarkItDown、OpenAI SDK、Tesseract OCR 和 LibreOffice 构建的文档转 Markdown HTTP 服务。支持 PDF、Word、PPT、Excel、图片等格式统一转换为 Markdown，提供 OCR 图转文、多模态大模型图片描述、异步任务处理等功能。",
+    description="基于 FastAPI、Redis + RQ、MarkItDown、OpenAI SDK、PaddleOCR 和 LibreOffice 构建的文档转 Markdown HTTP 服务。支持 PDF、Word、PPT、Excel、图片等格式统一转换为 Markdown，提供 OCR 图转文、多模态大模型图片描述、异步任务处理等功能。",
     version="1.0.0"
 )
 

@@ -8,6 +8,7 @@ from redis import Redis
 from datetime import datetime
 from rq.job import Job
 import asyncio
+import os
 import json
 import io
 import time
@@ -261,11 +262,14 @@ async def health_check():
     except:
         pass
 
-    tesseract_available = False
+    ocr_engine_available = False
     try:
-        import pytesseract
-        pytesseract.get_tesseract_version()
-        tesseract_available = True
+        ocr_socket = '/tmp/ocr.sock'
+        if os.path.exists(ocr_socket):
+            from multiprocessing.connection import Client
+            with Client(ocr_socket, family='AF_UNIX') as conn:
+                conn.send_bytes(b'ping')
+                ocr_engine_available = True
     except:
         pass
 
@@ -278,7 +282,7 @@ async def health_check():
 
     uptime = int((datetime.now() - start_time).total_seconds())
 
-    all_ok = redis_connected and tesseract_available and llm_available
+    all_ok = redis_connected and ocr_engine_available and llm_available
 
     from app.models import HealthDependencies, HealthMetrics
     request_metrics = metrics_collector.get_metrics()
@@ -290,7 +294,7 @@ async def health_check():
         uptime=uptime,
         dependencies=HealthDependencies(
             redis="healthy" if redis_connected else "unhealthy",
-            tesseract="healthy" if tesseract_available else "unhealthy",
+            ocr_engine="healthy" if ocr_engine_available else "unhealthy",
             llm="healthy" if llm_available else "unhealthy",
         ),
         metrics=HealthMetrics(
@@ -350,7 +354,6 @@ async def get_supported_formats():
             ],
             "ocr": {
                 "enabled": settings.OCR_ENABLED,
-                "language": settings.OCR_LANGUAGE,
                 "description": "OCR 图转文功能，提取图片中的文字内容"
             },
             "llm": {

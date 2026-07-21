@@ -48,7 +48,14 @@ class GeneralConverter:
         """
         初始化通用转换器
         """
-        self.md = self._initialize_markitdown()
+        self._md = None
+
+    @property
+    def md(self):
+        """延迟初始化 MarkItDown 实例"""
+        if self._md is None:
+            self._md = self._initialize_markitdown()
+        return self._md
 
     def _initialize_markitdown(self) -> MarkItDown:
         """

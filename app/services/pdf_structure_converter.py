@@ -12,7 +12,7 @@ import time
 import json
 import tempfile
 import shutil
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 from loguru import logger
 from PIL import Image
 from app.models import ImageMode
@@ -35,12 +35,22 @@ class PdfStructureConverter:
     - pdf_structure_converter.py：基于 PP-StructureV3 视觉解析（AI 驱动）
     """
 
-    def __init__(self):
+    def __init__(self, mode='auto', socket_path='/tmp/structure.sock'):
+        """
+        Args:
+            mode: 运行模式
+                - 'auto': 优先尝试远程引擎，不可用时回退本地
+                - 'remote': 仅使用远程引擎
+                - 'local': 仅使用本地 PP-StructureV3
+            socket_path: Structure 引擎 Unix Socket 路径
+        """
+        self.mode = mode
+        self.socket_path = socket_path
         self._pipeline = None
         self._initialized = False
 
     def _initialize(self):
-        """延迟初始化 PP-StructureV3 管道"""
+        """延迟初始化 PP-StructureV3 管道（仅 local 模式使用）"""
         if self._initialized:
             return
 
@@ -76,6 +86,9 @@ class PdfStructureConverter:
         """
         使用 PP-StructureV3 转换 PDF 为 Markdown
 
+        支持远程引擎模式（通过 Unix Socket 连接 structure_engine 进程）
+        和本地模式（直接调用 PP-StructureV3）。
+
         Args:
             file_stream: PDF 文件二进制流
             filename: 文件名
@@ -90,6 +103,74 @@ class PdfStructureConverter:
         """
         start_time = time.time()
 
+        # 远程模式
+        if self.mode in ('remote', 'auto'):
+            result = self._remote_convert(file_stream, filename, image_mode, image_quality, max_image_size)
+            if result is not None:
+                return result
+            if self.mode == 'remote':
+                logger.error("[PP-StructureV3] 远程引擎不可用，配置为仅远程模式，无法处理")
+                return {
+                    "filename": filename,
+                    "markdown": "Structure 引擎不可用",
+                    "images": [],
+                    "duration": round(time.time() - start_time, 2)
+                }
+            # auto 模式：回退到本地
+
+        # 本地模式
+        return self._local_convert(file_stream, filename, image_mode, start_time)
+
+    def _remote_convert(
+        self,
+        file_stream: BinaryIO,
+        filename: str,
+        image_mode: ImageMode,
+        image_quality: int,
+        max_image_size: int
+    ) -> Optional[dict]:
+        """通过 Unix Socket 请求 Structure 引擎进程"""
+        try:
+            from multiprocessing.connection import Client
+
+            file_stream.seek(0)
+            pdf_data = file_stream.read()
+
+            with Client(self.socket_path, family='AF_UNIX') as conn:
+                # 发送元数据
+                conn.send({
+                    "filename": filename,
+                    "image_mode": image_mode.value if hasattr(image_mode, 'value') else str(image_mode),
+                    "image_quality": image_quality,
+                    "max_image_size": max_image_size,
+                })
+                # 发送 PDF 数据
+                conn.send_bytes(pdf_data)
+                # 接收结果
+                result = conn.recv()
+
+            result["filename"] = filename
+            logger.info(
+                "[PP-StructureV3] 远程处理完成: {} ({} 张图片, {:.2f}s)",
+                filename, len(result.get("images", [])), result.get("duration", 0)
+            )
+            return result
+
+        except (FileNotFoundError, ConnectionRefusedError, OSError) as e:
+            logger.debug("[PP-StructureV3] 远程引擎不可用 ({}), 回退本地", e)
+            return None
+        except Exception as e:
+            logger.warning("[PP-StructureV3] 远程引擎通信异常: {}", e)
+            return None
+
+    def _local_convert(
+        self,
+        file_stream: BinaryIO,
+        filename: str,
+        image_mode: ImageMode,
+        start_time: float
+    ) -> dict:
+        """本地 PP-StructureV3 处理"""
         # 延迟初始化
         try:
             self._initialize()
@@ -97,7 +178,7 @@ class PdfStructureConverter:
             logger.error("PP-StructureV3 不可用，转换失败")
             return {
                 "filename": filename,
-                "markdown": f"PP-StructureV3 初始化失败，请检查 PaddleOCR 安装。",
+                "markdown": "PP-StructureV3 初始化失败，请检查 PaddleOCR 安装。",
                 "images": [],
                 "duration": round(time.time() - start_time, 2)
             }
@@ -112,7 +193,7 @@ class PdfStructureConverter:
             with open(temp_pdf, 'wb') as f:
                 f.write(file_stream.read())
 
-            logger.info(f"[PP-StructureV3] 开始处理: {filename}")
+            logger.info(f"[PP-StructureV3] 开始本地处理: {filename}")
 
             # 运行 PP-StructureV3 管道
             results = self._pipeline.predict(input=temp_pdf)
@@ -155,7 +236,6 @@ class PdfStructureConverter:
                             markdown_text += page_md
 
                 # 处理页面中的图片资源
-                # PP-StructureV3 会在输出目录下生成图片文件
                 if image_mode != ImageMode.NONE:
                     image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
                     for img_file in sorted(os.listdir(output_subdir)):
@@ -185,7 +265,7 @@ class PdfStructureConverter:
                                 logger.warning(f"[PP-StructureV3] 读取图片失败 {img_file}: {e}")
 
             duration = time.time() - start_time
-            logger.info(f"[PP-StructureV3] 处理完成: {filename} ({len(all_images)} 张图片, {duration:.2f}s)")
+            logger.info(f"[PP-StructureV3] 本地处理完成: {filename} ({len(all_images)} 张图片, {duration:.2f}s)")
 
             # 如果 markdown 为空，尝试读取 JSON 结果作为备选
             if not markdown_text.strip():
@@ -198,7 +278,6 @@ class PdfStructureConverter:
                         try:
                             with open(json_path, 'r', encoding='utf-8') as f:
                                 data = json.load(f)
-                            # 从 JSON 中提取文本
                             text_parts = self._extract_text_from_json(data)
                             if text_parts:
                                 if markdown_text:
@@ -215,7 +294,7 @@ class PdfStructureConverter:
             }
 
         except Exception as e:
-            logger.error(f"[PP-StructureV3] 处理失败: {e}")
+            logger.error(f"[PP-StructureV3] 本地处理失败: {e}")
             import traceback
             logger.error(traceback.format_exc())
             return {
@@ -225,7 +304,6 @@ class PdfStructureConverter:
                 "duration": round(time.time() - start_time, 2)
             }
         finally:
-            # 清理临时目录
             shutil.rmtree(work_dir, ignore_errors=True)
 
     def _extract_text_from_json(self, data: dict) -> str:

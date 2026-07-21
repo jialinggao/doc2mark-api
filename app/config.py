@@ -32,11 +32,6 @@ class Settings(BaseSettings):
     LLM_EXTRA_PARAMS: str = "{}"
     
     OCR_ENABLED: bool = True
-    OCR_LANGUAGE: str = "chi_sim+eng"
-    OCR_TESSERACT_PATH: Optional[str] = None
-    OCR_MIN_LENGTH: int = 1
-    OCR_MIN_CONFIDENCE: float = 0.3
-    OCR_MAX_SYMBOL_RATIO: float = 0.5
     
     DEFAULT_IMAGE_QUALITY: int = 100
     DEFAULT_MAX_IMAGE_SIZE: int = -1
