@@ -31,7 +31,8 @@ class DocumentConverterService:
         enable_llm: bool = False,
         image_mode: ImageMode = ImageMode.BASE64,
         image_quality: int = 100,
-        max_image_size: int = -1
+        max_image_size: int = -1,
+        use_structure_engine: bool = False
     ) -> dict:
         """
         转换文档为 Markdown 格式（统一入口）
@@ -44,6 +45,7 @@ class DocumentConverterService:
             image_mode: 图片输出模式（BASE64 或 URL）
             image_quality: 图片压缩质量（0-100）
             max_image_size: 图片最大尺寸限制（像素），-1 表示不限制
+            use_structure_engine: PDF 是否使用 PP-StructureV3 引擎
 
         Returns:
             转换结果字典，包含：
@@ -62,13 +64,13 @@ class DocumentConverterService:
 
         # PDF 文件路由
         elif ext == '.pdf':
-            # 使用 PP-StructureV3 处理 PDF（如需切换回 PyMuPDF，将下面两行注释掉，取消注释 pdf_converter 部分）
-            logger.info(f"[路由] PDF → pdf_structure_converter (PP-StructureV3): {filename}")
-            from app.services.pdf_structure_converter import pdf_structure_converter
-            return pdf_structure_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
-            # 原 PyMuPDF 方案（取消注释下面两行，注释掉上面三行即可切换）
-            # logger.info(f"[路由] PDF → pdf_converter: {filename}")
-            # return pdf_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
+            if use_structure_engine:
+                logger.info(f"[路由] PDF → pdf_structure_converter (PP-StructureV3): {filename}")
+                from app.services.pdf_structure_converter import pdf_structure_converter
+                return pdf_structure_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
+            else:
+                logger.info(f"[路由] PDF → pdf_converter (PyMuPDF): {filename}")
+                return pdf_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # OFD 文件路由（中国自主文档格式标准）
         elif ext == '.ofd':

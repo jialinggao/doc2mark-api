@@ -32,6 +32,7 @@ def process_document_task(
     image_mode: str,
     image_quality: int = 100,
     max_image_size: int = -1,
+    use_structure_engine: bool = False,
     callback_url: str = None
 ):
     start_time = time.time()
@@ -46,7 +47,8 @@ def process_document_task(
             enable_llm=enable_llm,
             image_mode=ImageMode(image_mode),
             image_quality=image_quality,
-            max_image_size=max_image_size
+            max_image_size=max_image_size,
+            use_structure_engine=use_structure_engine
         )
         
         duration = time.time() - start_time

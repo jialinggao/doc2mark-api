@@ -1,19 +1,23 @@
 """
 Structure 引擎进程 - 独立运行 PP-StructureV3，通过 Unix Socket 对外提供服务
 
+职责：将支持的格式（PDF/图片等）通过 PP-StructureV3 转换为 Markdown，
+      图片一律以 base64 内联在 markdown 中，由调用方决定如何使用。
+
 由 run_worker.py 启动为独立进程，每个进程只初始化一次 PP-StructureV3，
 所有 worker 进程通过 IPC 共享此引擎，避免重复初始化。
 """
 import os
 import io
+import re
 import time
 import json
+import base64
 import tempfile
 import shutil
 from multiprocessing.connection import Listener
 from loguru import logger
 from PIL import Image
-from app.models import ImageMode
 
 
 def run_structure_engine(socket_path: str):
@@ -23,6 +27,16 @@ def run_structure_engine(socket_path: str):
     # 清理残留 socket 文件
     if os.path.exists(socket_path):
         os.unlink(socket_path)
+
+    # PaddlePaddle 内存管理：按需分配、限制池大小、及时回收
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    os.environ['FLAGS_use_mkldnn'] = 'False'
+    os.environ['FLAGS_use_onednn'] = 'False'
+    os.environ['FLAGS_use_mkldnn_bf16'] = 'False'
+    os.environ['FLAGS_allocator_strategy'] = 'auto_growth'
+    os.environ['FLAGS_fraction_of_cpu_memory_to_use'] = '0.3'
+    os.environ['FLAGS_eager_delete_tensor_gb'] = '0.0'
 
     # 初始化 PP-StructureV3
     from paddleocr import PPStructureV3
@@ -56,31 +70,28 @@ def _handle_connection(conn, pipeline):
     """处理单个 Structure 请求"""
     start_time = time.time()
 
-    # 接收请求元数据
+    # 接收请求元数据（仅需文件名）
     req = conn.recv()
     filename = req['filename']
-    image_mode_str = req.get('image_mode', 'base64')
-    image_quality = req.get('image_quality', 100)
-    max_image_size = req.get('max_image_size', -1)
 
-    # 接收 PDF 数据
-    pdf_data = conn.recv_bytes()
+    # 接收文件数据
+    file_data = conn.recv_bytes()
 
     # 创建临时工作目录
     work_dir = tempfile.mkdtemp(prefix="structure_engine_")
-    temp_pdf = os.path.join(work_dir, filename)
+    temp_file = os.path.join(work_dir, filename)
 
     try:
-        with open(temp_pdf, 'wb') as f:
-            f.write(pdf_data)
+        with open(temp_file, 'wb') as f:
+            f.write(file_data)
 
         logger.info(
             "[StructureEngine] 开始处理: {} ({} bytes)",
-            filename, len(pdf_data)
+            filename, len(file_data)
         )
 
         # 运行 PP-StructureV3 管道
-        results = pipeline.predict(input=temp_pdf)
+        results = pipeline.predict(input=temp_file)
 
         # 收集所有页面的 Markdown 和图片
         markdown_text = ""
@@ -102,51 +113,77 @@ def _handle_connection(conn, pipeline):
         for page_idx, res in enumerate(results):
             logger.debug("[StructureEngine] 处理第 {} 页", page_idx + 1)
 
-            # 保存当前页面的 Markdown 到临时文件
+            # 保存当前页面的 Markdown 和 JSON 到临时文件
             output_subdir = os.path.join(work_dir, f"page_{page_idx}")
             os.makedirs(output_subdir, exist_ok=True)
             res.save_to_markdown(output_subdir)
             res.save_to_json(output_subdir)
 
             # 读取生成的 Markdown 文件
-            md_files = [f for f in os.listdir(output_subdir) if f.endswith('.md')]
-            for md_file in md_files:
+            page_md = ""
+            for md_file in sorted(os.listdir(output_subdir)):
+                if not md_file.endswith('.md'):
+                    continue
                 md_path = os.path.join(output_subdir, md_file)
                 with open(md_path, 'r', encoding='utf-8') as f:
-                    page_md = f.read()
-                    if page_md.strip():
-                        if markdown_text:
-                            markdown_text += "\n\n---\n\n"
-                        markdown_text += page_md
+                    page_md = f.read().strip()
 
-            # 处理页面中的图片资源
-            if image_mode_str != 'none':
-                image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
-                for img_file in sorted(os.listdir(output_subdir)):
-                    if img_file.lower().endswith(image_extensions):
-                        img_path = os.path.join(output_subdir, img_file)
-                        try:
-                            with open(img_path, 'rb') as f:
-                                img_data = f.read()
+            if not page_md:
+                continue
 
-                            img = Image.open(io.BytesIO(img_data))
-                            width, height = img.size
+            # 递归扫描所有子目录，收集图片并内联到 markdown
+            image_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp')
+            img_map = {}  # filename -> base64 数据 URI
 
-                            if image_mode_str == 'base64':
-                                import base64
-                                img_b64 = base64.b64encode(img_data).decode('utf-8')
-                                image_content = f"data:image/{img_file.rsplit('.', 1)[-1].lower()};base64,{img_b64}"
-                            else:
-                                image_content = img_file
+            for root, dirs, files in os.walk(output_subdir):
+                for img_file in sorted(files):
+                    if not img_file.lower().endswith(image_extensions):
+                        continue
+                    img_path = os.path.join(root, img_file)
+                    try:
+                        with open(img_path, 'rb') as f:
+                            img_data = f.read()
 
-                            all_images.append({
-                                "name": f"page_{page_idx}_{img_file}",
-                                "content": image_content,
-                                "width": width,
-                                "height": height
-                            })
-                        except Exception as e:
-                            logger.warning("[StructureEngine] 读取图片失败 {}: {}", img_file, e)
+                        img = Image.open(io.BytesIO(img_data))
+                        width, height = img.size
+
+                        img_ext = img_file.rsplit('.', 1)[-1].lower()
+                        img_b64 = base64.b64encode(img_data).decode('utf-8')
+                        image_content = f"data:image/{img_ext};base64,{img_b64}"
+
+                        all_images.append({
+                            "name": f"page_{page_idx}_{img_file}",
+                            "content": image_content,
+                            "width": width,
+                            "height": height
+                        })
+
+                        # 记录用于替换 markdown 中的相对路径
+                        img_map[img_file] = image_content
+                    except Exception as e:
+                        logger.warning("[StructureEngine] 读取图片失败 {}: {}", img_file, e)
+
+            # 将 markdown 中的 <img> 标签替换为标准 markdown 图片语法
+            for filename, content in img_map.items():
+                page_md = re.sub(
+                    r'<img[^>]*' + re.escape(filename) + r'[^>]*>',
+                    f'![{filename}]({content})',
+                    page_md
+                )
+
+            # 清理多余的 <div> 包装
+            page_md = re.sub(
+                r'<div[^>]*>\s*(!\[.*?\]\(.*?\))\s*</div>',
+                r'\1',
+                page_md
+            )
+            # 清理 PP-StructureV3 生成的图片占位文本
+            page_md = re.sub(r'\*\*\[图片\s*-\s*[^\]]*\]\*\*', '', page_md)
+
+            # 追加到全局 markdown
+            if markdown_text:
+                markdown_text += "\n\n---\n\n"
+            markdown_text += page_md
 
         duration = time.time() - start_time
         logger.info(
@@ -190,6 +227,26 @@ def _handle_connection(conn, pipeline):
         })
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
+
+        # 释放内存，防止多次请求后 OOM
+        try:
+            del results
+        except NameError:
+            pass
+        try:
+            del all_images
+        except NameError:
+            pass
+        try:
+            del markdown_text
+        except NameError:
+            pass
+        gc.collect()
+        try:
+            import ctypes
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except Exception:
+            pass
 
 
 def _extract_text_from_json(data: dict) -> str:

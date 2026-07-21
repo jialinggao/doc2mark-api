@@ -36,7 +36,8 @@ async def convert_document(
     enable_llm: bool = Form(False, description="是否启用多模态大模型图片描述"),
     image_mode: ImageMode = Form(ImageMode.BASE64, description="图片处理模式：base64/embed, placeholder/占位符, external/外部链接, none/不显示图片"),
     image_quality: int = Form(100, description="图片压缩质量（1-100，仅jpg有效）"),
-    max_image_size: int = Form(-1, description="图片最大边长像素，-1表示不缩放")
+    max_image_size: int = Form(-1, description="图片最大边长像素，-1表示不缩放"),
+    use_structure_engine: bool = Form(False, description="PDF 是否使用 PP-StructureV3 引擎转换（true=structure_engine, false=pdf_converter）")
 ):
     content = await file.read()
     if len(content) > settings.MAX_FILE_SIZE:
@@ -75,6 +76,7 @@ async def convert_document(
         image_mode=image_mode.value,
         image_quality=image_quality,
         max_image_size=max_image_size,
+        use_structure_engine=use_structure_engine,
         job_timeout=settings.SYNC_TASK_TIMEOUT + 60,
         result_ttl=300
     )
@@ -125,6 +127,7 @@ async def create_task(
     image_mode: ImageMode = Form(ImageMode.BASE64, description="图片处理模式：base64/embed, placeholder/占位符, external/外部链接, none/不显示图片"),
     image_quality: int = Form(100, description="图片压缩质量（1-100，仅jpg有效）"),
     max_image_size: int = Form(-1, description="图片最大边长像素，-1表示不缩放"),
+    use_structure_engine: bool = Form(True, description="PDF 是否使用 PP-StructureV3 引擎转换（true=structure_engine, false=pdf_converter）"),
     callback_url: str = Form(None, description="任务完成后的回调URL")
 ):
     content = await file.read()
@@ -152,6 +155,7 @@ async def create_task(
         image_mode=image_mode.value,
         image_quality=image_quality,
         max_image_size=max_image_size,
+        use_structure_engine=use_structure_engine,
         callback_url=callback_url,
         job_timeout=settings.ASYNC_TASK_TIMEOUT,
         result_ttl=settings.RESULT_TTL,

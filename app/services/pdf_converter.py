@@ -55,22 +55,56 @@ class PdfConverter:
         start_time = time.time()
         images = []
         markdown_text = ""
-        extracted_text_length = 0
 
         try:
             file_stream.seek(0)
             # 使用 PyMuPDF 打开 PDF
             doc = fitz.open("pdf", file_stream.read())
 
+            # 预检查：判断是否需要全文OCR
+            need_full_ocr = False
+            if enable_ocr:
+                total_text = ""
+                for page_num in range(len(doc)):
+                    total_text += doc[page_num].get_text("text")
+                    if len(total_text) >= 100:
+                        break
+                if len(total_text) < 100:
+                    need_full_ocr = True
+                    logger.info(
+                        f"[PDF] 检测到需要全文OCR: 文本提取过少({len(total_text)}字符，可能是图片或向量图形PDF)"
+                    )
+
             # 逐页处理 PDF
             for page_num in range(len(doc)):
                 page = doc[page_num]
 
-                # 获取页面文本和格式信息
-                text_dict = page.get_text("dict")
-
                 page_text = ""
                 page_text_count = 0
+
+                # 如果需要全文OCR，直接渲染页面为图片并OCR
+                if need_full_ocr:
+                    try:
+                        pix = page.get_pixmap(dpi=200, colorspace=fitz.csRGB)
+                        img_data = pix.tobytes("png")
+                        img_name = f"page_{page_num + 1}.png"
+                        image_block, image_info = image_processor.build_image_block(
+                            img_name, img_data, "png", image_mode, True, enable_llm,
+                            width=pix.width, height=pix.height
+                        )
+                        if image_info:
+                            images.append(image_info)
+                        page_text = f"## 第 {page_num + 1} 页\n\n" + image_block + "\n"
+                        if page_num < len(doc) - 1:
+                            page_text += "\n---\n\n"
+                        markdown_text += page_text
+                    except Exception as e:
+                        logger.error(f"[PDF] 全文OCR处理第{page_num + 1}页失败: {e}")
+                        markdown_text += f"## 第 {page_num + 1} 页\n\nOCR处理失败: {str(e)}\n"
+                    continue
+
+                # 获取页面文本和格式信息
+                text_dict = page.get_text("dict")
 
                 page_contents = []
 
@@ -325,7 +359,6 @@ class PdfConverter:
                 if markdown_text:
                     markdown_text += "\n\n---\n\n"
                 markdown_text += page_text
-                extracted_text_length += page_text_count
 
             doc.close()
 
@@ -338,101 +371,7 @@ class PdfConverter:
                 "duration": round(time.time() - start_time, 2)
             }
 
-        # 文本提取过少时，启用 OCR 回退
-        if enable_ocr and extracted_text_length < 100:
-            logger.info(f"[PDF 回退] 提取文本过少({extracted_text_length}字符)，启用整页 OCR 回退处理")
-            file_stream.seek(0)
-            return self._fallback_pdf_to_images(
-                file_stream, filename, image_mode, image_quality, max_image_size, enable_ocr, enable_llm
-            )
-
         duration = time.time() - start_time
-
-        return {
-            "filename": filename,
-            "markdown": markdown_text,
-            "images": images,
-            "duration": round(duration, 2)
-        }
-
-    def _fallback_pdf_to_images(
-        self,
-        file_stream: BinaryIO,
-        filename: str,
-        image_mode: ImageMode,
-        image_quality: int = 100,
-        max_image_size: int = -1,
-        enable_ocr: bool = False,
-        enable_llm: bool = False
-    ) -> dict:
-        """
-        PDF OCR 回退处理 - 将每一页作为图片处理
-
-        Args:
-            file_stream: 文件二进制流
-            filename: 文件名
-            image_mode: 图片输出模式
-            image_quality: 图片质量
-            max_image_size: 图片最大尺寸
-            enable_ocr: 是否启用 OCR
-            enable_llm: 是否启用 LLM
-
-        Returns:
-            转换结果字典
-        """
-        start_time = time.time()
-        images = []
-        markdown_text = ""
-
-        try:
-            file_stream.seek(0)
-            doc = fitz.open("pdf", file_stream.read())
-
-            # 逐页渲染为图片
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-
-                # 渲染为 RGB 图片，200 DPI 以提高 OCR 准确度
-                pix = page.get_pixmap(dpi=200, colorspace=fitz.csRGB)
-                img_data = pix.tobytes("png")
-
-                # OCR 回退处理时不压缩图片，保持原始质量
-                processed_bytes = img_data
-                img_ext = "png"
-
-                img_name = f"page_{page_num + 1}.png"
-
-                # 构建图片块
-                image_block, image_info = image_processor.build_image_block(
-                    img_name, processed_bytes, img_ext, image_mode, enable_ocr, enable_llm,
-                    width=pix.width, height=pix.height
-                )
-
-                if image_info:
-                    images.append(image_info)
-
-                # 添加页标题
-                image_block = f"## 第 {page_num + 1} 页\n\n" + image_block
-
-                if markdown_text:
-                    markdown_text += "\n\n---\n\n"
-                markdown_text += image_block
-
-                logger.info(f"[PDF 回退处理] 已处理第 {page_num + 1} 页")
-
-            doc.close()
-
-        except Exception as e:
-            logger.error(f"PDF 回退处理失败: {e}")
-            return {
-                "filename": filename,
-                "markdown": f"处理 PDF 文件时出错: {str(e)}",
-                "images": [],
-                "duration": round(time.time() - start_time, 2)
-            }
-
-        duration = time.time() - start_time
-        logger.info(f"[PDF 回退处理] 完成，共 {len(images)} 页，耗时 {duration:.2f} 秒")
 
         return {
             "filename": filename,
