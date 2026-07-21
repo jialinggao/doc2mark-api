@@ -37,12 +37,12 @@ class ImageProcessor:
                 )
 
                 if result.returncode != 0:
-                    logger.warning(f"LibreOffice 转换 {img_type} 为 PDF 失败: {result.stderr[:200]}")
+                    logger.warning("[ImageProcessor] LibreOffice 转换 {} 为 PDF 失败: {}", img_type, result.stderr[:200])
                     return image_data, 'png'
 
                 pdf_path = os.path.join(tmpdir, 'input.pdf')
                 if not os.path.exists(pdf_path):
-                    logger.warning(f"PDF 文件未生成: {pdf_path}")
+                    logger.warning("[ImageProcessor] PDF 文件未生成: {}", pdf_path)
                     return image_data, 'png'
 
                 # 用 PyMuPDF 渲染 PDF 页面为图像
@@ -71,9 +71,9 @@ class ImageProcessor:
                 return buf.getvalue(), 'png'
 
         except FileNotFoundError:
-            logger.warning("LibreOffice 不可用，无法转换非标准图片格式")
+            logger.warning("[ImageProcessor] LibreOffice 不可用，无法转换非标准图片格式")
         except Exception as e:
-            logger.warning(f"转换 {img_type} 图片时出错: {e}")
+            logger.warning("[ImageProcessor] 转换 {} 图片时出错: {}", img_type, e)
 
         # 转换失败时返回原始数据，但标记为 png 以保持兼容
         return image_data, 'png'
@@ -105,7 +105,7 @@ class ImageProcessor:
             return output_buffer.getvalue(), img_format.lower()
         
         except Exception as e:
-            logger.error(f"压缩图片失败: {e}")
+            logger.error("[ImageProcessor] 压缩图片失败: {}", e)
             return image_data, original_ext or 'png'
 
     def format_image_by_mode(

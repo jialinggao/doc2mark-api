@@ -60,32 +60,32 @@ class DocumentConverterService:
 
         # Excel 文件路由
         if ext in ('.xls', '.xlsx'):
-            logger.info(f"[路由] Excel → excel_converter: {filename}")
+            logger.info("[Converter] 路由: Excel → excel_converter, filename={}", filename)
             return excel_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # PDF 文件路由
         elif ext == '.pdf':
             if settings.USE_STRUCTURE_ENGINE:
-                logger.info(f"[路由] PDF → pdf_structure_converter (PP-StructureV3): {filename}")
+                logger.info("[Converter] 路由: PDF → pdf_structure_converter (PP-StructureV3), filename={}", filename)
                 from app.services.pdf_structure_converter import pdf_structure_converter
                 return pdf_structure_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
             else:
-                logger.info(f"[路由] PDF → pdf_converter (PyMuPDF): {filename}")
+                logger.info("[Converter] 路由: PDF → pdf_converter (PyMuPDF), filename={}", filename)
                 return pdf_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # OFD 文件路由（中国自主文档格式标准）
         elif ext == '.ofd':
-            logger.info(f"[路由] OFD → ofd_converter: {filename}")
+            logger.info("[Converter] 路由: OFD → ofd_converter, filename={}", filename)
             return ofd_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # Word 文件路由（支持 .doc 和 .docx）
         elif ext in ('.doc', '.docx'):
-            logger.info(f"[路由] Word → word_converter: {filename}")
+            logger.info("[Converter] 路由: Word → word_converter, filename={}", filename)
             return word_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
         # 其他格式路由（包含 .ppt, .pptx, .png, .jpg, .html 等）
         else:
-            logger.info(f"[路由] 其他 → general_converter: {filename}")
+            logger.info("[Converter] 路由: 其他 → general_converter, filename={}", filename)
             return general_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
 

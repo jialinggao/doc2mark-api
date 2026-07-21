@@ -81,9 +81,9 @@ def _preload_worker_resources():
         from app.services.pdf_structure_converter import pdf_structure_converter
         pdf_structure_converter.mode = 'remote'
         pdf_structure_converter.socket_path = STRUCTURE_SOCKET_PATH
-        logger.info("[Preload] PP-StructureV3 引擎已配置: {}", STRUCTURE_SOCKET_PATH)
+        logger.info("[Preload] PPStructure 引擎已配置: {}", STRUCTURE_SOCKET_PATH)
     except Exception as e:
-        logger.warning("[Preload] PP-StructureV3 引擎配置失败: {}", e)
+        logger.warning("[Preload] PPStructure 引擎配置失败: {}", e)
 
     logger.info("[Preload] Worker 资源预加载完成")
 

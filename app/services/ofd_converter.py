@@ -35,9 +35,9 @@ class OfdConverter:
         self.java_jar_path = os.path.abspath(self.java_jar_path)
         
         if os.path.exists(self.java_jar_path):
-            logger.info(f"OFD 转换器 JAR 文件路径: {self.java_jar_path}")
+            logger.info("[OFDConverter] JAR 文件路径: {}", self.java_jar_path)
         else:
-            logger.error(f"OFD 转换器 JAR 文件未找到: {self.java_jar_path}")
+            logger.error("[OFDConverter] JAR 文件未找到: {}", self.java_jar_path)
 
     def convert(
         self,
@@ -85,7 +85,7 @@ class OfdConverter:
         try:
             # 创建临时目录
             temp_dir = tempfile.mkdtemp(prefix="ofd_convert_")
-            logger.info(f"[OFD] 创建临时目录: {temp_dir}")
+            logger.debug("[OFDConverter] 创建临时目录: {}", temp_dir)
 
             # 保存 OFD 文件到临时目录
             ofd_file_path = os.path.join(temp_dir, "input.ofd")
@@ -133,7 +133,7 @@ class OfdConverter:
                     need_full_ocr = True
                     full_ocr_reason = f"文本提取过少({len(total_text)}字符，可能是图片或向量图形PDF)"
             if need_full_ocr:
-                logger.info(f"[OFD] 检测到需要全文OCR: {full_ocr_reason}")
+                logger.info("[OFDConverter] 检测到需要全文OCR: {}", full_ocr_reason)
 
             # 逐页处理 PDF
             for page_num in range(len(doc)):
@@ -165,7 +165,7 @@ class OfdConverter:
                         
                         markdown_text += page_text
                     except Exception as e:
-                        logger.error(f"[OFD] 全文OCR处理第{page_num + 1}页失败: {e}")
+                        logger.error("[OFDConverter] 全文OCR处理第{}页失败: {}", page_num + 1, e)
                         page_text = f"## 第 {page_num + 1} 页\n\nOCR处理失败: {str(e)}\n"
                     
                     continue
@@ -433,9 +433,9 @@ class OfdConverter:
             doc.close()
 
         except Exception as e:
-            logger.error(f"OFD 转换失败: {e}")
+            logger.error("[OFDConverter] 转换失败: {}", e)
             import traceback
-            logger.error(f"OFD 转换失败详情: {traceback.format_exc()}")
+            logger.error("[OFDConverter] 转换失败详情: {}", traceback.format_exc())
             return {
                 "filename": filename,
                 "markdown": f"处理 OFD 文件时出错: {str(e)}\n\n```\n{traceback.format_exc()}\n```",
@@ -447,12 +447,12 @@ class OfdConverter:
             if temp_dir and os.path.exists(temp_dir):
                 try:
                     shutil.rmtree(temp_dir)
-                    logger.debug(f"[OFD] 清理临时目录: {temp_dir}")
+                    logger.debug("[OFDConverter] 清理临时目录: {}", temp_dir)
                 except Exception as e:
-                    logger.warning(f"[OFD] 清理临时目录失败: {e}")
+                    logger.warning("[OFDConverter] 清理临时目录失败: {}", e)
 
         duration = time.time() - start_time
-        logger.info(f"[OFD] 转换完成，共 {page_count} 页，提取文本 {extracted_text_length} 字符，耗时 {duration:.2f} 秒")
+        logger.info("[OFDConverter] 转换完成，共 {} 页，提取文本 {} 字符，耗时 {:.2f}s", page_count, extracted_text_length, duration)
 
         return {
             "filename": filename,
@@ -508,17 +508,17 @@ class OfdConverter:
                     
                     # 2. 检查是否使用内嵌字体
                     if is_embedded == 0:
-                        logger.debug(f"[OFD] 字体未嵌入，使用系统字体: {font_name}")
+                        logger.debug("[OFDConverter] 字体未嵌入，使用系统字体: {}", font_name)
                         continue
                     
                     # 3. 检查编码方式
                     if encoding != 'Identity-H':
-                        logger.debug(f"[OFD] 使用标准字符集编码: {encoding}, 字体: {font_name}")
+                        logger.debug("[OFDConverter] 使用标准字符集编码: {}, 字体: {}", encoding, font_name)
                         continue
                     
                     # 4. 检查是否有ToUnicode映射（有映射可以正确提取）
                     if has_tounicode:
-                        logger.debug(f"[OFD] 有ToUnicode映射，可以正确提取: {font_name}")
+                        logger.debug("[OFDConverter] 有 ToUnicode 映射，可以正确提取: {}", font_name)
                         continue
                     
                     # 5. 【关键改进】直接解析内嵌字体的CMAP表来判断是否标准
@@ -527,22 +527,21 @@ class OfdConverter:
                     if font_data:
                         is_standard_cmap = self._is_standard_cmap(font_data)
                         if is_standard_cmap:
-                            logger.debug(f"[OFD] CMAP表符合标准编码特征: {font_name}")
+                            logger.debug("[OFDConverter] CMAP 表符合标准编码特征: {}", font_name)
                             continue
                         else:
-                            logger.debug(f"[OFD] CMAP表不符合标准编码特征（可能是自定义编码）: {font_name}")
+                            logger.debug("[OFDConverter] CMAP 表不符合标准编码特征（可能是自定义编码）: {}", font_name)
                     else:
                         # 无法提取字体数据，保守起见判定为非标准CMAP
-                        logger.debug(f"[OFD] 无法提取字体数据，保守判定为非标准CMAP: {font_name}")
+                        logger.debug("[OFDConverter] 无法提取字体数据，保守判定为非标准 CMAP: {}", font_name)
                     
                     # 6. 最终判断：内嵌字体 + Identity-H + 无ToUnicode + 非标准CMAP → 需要OCR
-                    logger.debug(f"[OFD] 需要OCR - 内嵌字体: {font_name}, 编码: {encoding}, "
-                                f"ToUnicode: {has_tounicode}, CMAP标准: {is_standard_cmap if font_data else '未知'}")
+                    logger.debug("[OFDConverter] 需要 OCR - 内嵌字体: {}, 编码: {}, ToUnicode: {}, CMAP 标准: {}", font_name, encoding, has_tounicode, is_standard_cmap if font_data else '未知')
                     return True
             
             return False
         except Exception as e:
-            logger.debug(f"[OFD] 检测字体编码失败: {e}")
+            logger.debug("[OFDConverter] 检测字体编码失败: {}", e)
             return False
     
     def _is_standard_cmap(self, font_data: bytes) -> bool:
@@ -611,12 +610,12 @@ class OfdConverter:
             #    - 字形数量足够多（≥ 2000）
             is_standard = has_unicode_platform0 and num_glyphs >= 2000
             
-            logger.debug(f"[OFD] CMAP标准性判断 - Unicode Platform=0: {has_unicode_platform0}, 字形数量: {num_glyphs}, 标准: {is_standard}")
+            logger.debug("[OFDConverter] CMAP 标准性判断 - Unicode Platform=0: {}, 字形数量: {}, 标准: {}", has_unicode_platform0, num_glyphs, is_standard)
             
             return is_standard
         
         except Exception as e:
-            logger.debug(f"[OFD] 解析CMAP表失败: {e}")
+            logger.debug("[OFDConverter] 解析 CMAP 表失败: {}", e)
             return False  # 解析失败，保守判定为非标准
 
     def _convert_ofd_to_pdf(self, ofd_path: str, pdf_path: str) -> bool:
@@ -631,7 +630,7 @@ class OfdConverter:
             是否转换成功
         """
         try:
-            logger.info(f"[OFD] 开始转换 OFD 到 PDF: {ofd_path} -> {pdf_path}")
+            logger.info("[OFDConverter] 开始转换 OFD 到 PDF: {} -> {}", ofd_path, pdf_path)
 
             # 构建 Java 命令
             command = [
@@ -639,7 +638,7 @@ class OfdConverter:
                 ofd_path, pdf_path, "pdf"
             ]
 
-            logger.info(f"[OFD] 执行命令: {' '.join(command)}")
+            logger.info("[OFDConverter] 执行命令: {}", ' '.join(command))
 
             # 执行命令
             result = subprocess.run(
@@ -651,24 +650,24 @@ class OfdConverter:
 
             if result.returncode == 0:
                 if os.path.exists(pdf_path):
-                    logger.info(f"[OFD] OFD 转 PDF 成功")
+                    logger.info("[OFDConverter] OFD 转 PDF 成功")
                     return True
                 else:
-                    logger.error(f"[OFD] 命令执行成功但 PDF 文件未生成")
+                    logger.error("[OFDConverter] 命令执行成功但 PDF 文件未生成")
                     return False
             else:
-                logger.error(f"[OFD] OFD 转 PDF 失败，返回码: {result.returncode}")
+                logger.error("[OFDConverter] OFD 转 PDF 失败，返回码: {}", result.returncode)
                 if result.stderr:
-                    logger.error(f"[OFD] 错误输出: {result.stderr[:2000]}")
+                    logger.error("[OFDConverter] 错误输出: {}", result.stderr[:2000])
                 if result.stdout:
-                    logger.debug(f"[OFD] 标准输出: {result.stdout[:2000]}")
+                    logger.debug("[OFDConverter] 标准输出: {}", result.stdout[:2000])
                 return False
 
         except subprocess.TimeoutExpired:
-            logger.error(f"[OFD] OFD 转 PDF 超时")
+            logger.error("[OFDConverter] OFD 转 PDF 超时")
             return False
         except Exception as e:
-            logger.error(f"[OFD] OFD 转 PDF 异常: {e}")
+            logger.error("[OFDConverter] OFD 转 PDF 异常: {}", e)
             return False
 
     def _remove_duplicate_chars(self, text: str) -> str:

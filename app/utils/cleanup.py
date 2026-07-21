@@ -37,14 +37,14 @@ async def cleanup_expired_jobs():
                         pass
 
         if cleaned > 0:
-            logger.info("[清理] 清理过期任务 {} 个", cleaned)
+            logger.info("[Cleanup] 清理过期任务 {} 个", cleaned)
     except Exception as e:
-        logger.warning("[清理] 清理过期任务失败: {}", e)
+        logger.warning("[Cleanup] 清理过期任务失败: {}", e)
 
 
 async def cleanup_loop():
     interval = settings.CLEANUP_INTERVAL_MINUTES * 60
-    logger.info("[清理] 定时清理任务启动, 间隔 {} 分钟", settings.CLEANUP_INTERVAL_MINUTES)
+    logger.info("[Cleanup] 定时清理任务启动，间隔 {} 分钟", settings.CLEANUP_INTERVAL_MINUTES)
     while True:
         await asyncio.sleep(interval)
         await cleanup_expired_jobs()

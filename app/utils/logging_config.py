@@ -107,7 +107,7 @@ def setup_logging(log_level: str = "INFO"):
         diagnose=True,
     )
 
-    logger.info("日志系统初始化完成, 日志目录: {}", LOG_DIR)
+    logger.info("[LogConfig] 日志系统初始化完成，日志目录: {}", LOG_DIR)
     return logger
 
 
@@ -143,7 +143,7 @@ def log_access(
         with open(access_file, "a", encoding="utf-8") as f:
             f.write(line)
     except Exception:
-        logger.warning("写入访问日志失败: {}/{}", method, path)
+        logger.warning("[LogConfig] 写入访问日志失败: {}/{}", method, path)
 
 
 def log_error_with_context(
@@ -164,7 +164,7 @@ def log_error_with_context(
         context["extra"] = extra
 
     logger.error(
-        "{}: {}",
+        "[LogConfig] {}: {}",
         type(error).__name__,
         str(error),
         extra={"error_context": context},

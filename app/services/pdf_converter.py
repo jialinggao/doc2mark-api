@@ -72,7 +72,7 @@ class PdfConverter:
                 if len(total_text) < 100:
                     need_full_ocr = True
                     logger.info(
-                        f"[PDF] 检测到需要全文OCR: 文本提取过少({len(total_text)}字符，可能是图片或向量图形PDF)"
+                        "[PDFConverter] 检测到需要全文OCR: 文本提取过少({}字符，可能是图片或向量图形PDF)", len(total_text)
                     )
 
             # 逐页处理 PDF
@@ -99,7 +99,7 @@ class PdfConverter:
                             page_text += "\n---\n\n"
                         markdown_text += page_text
                     except Exception as e:
-                        logger.error(f"[PDF] 全文OCR处理第{page_num + 1}页失败: {e}")
+                        logger.error("[PDFConverter] 全文OCR处理第{}页失败: {}", page_num + 1, e)
                         markdown_text += f"## 第 {page_num + 1} 页\n\nOCR处理失败: {str(e)}\n"
                     continue
 
@@ -363,7 +363,7 @@ class PdfConverter:
             doc.close()
 
         except Exception as e:
-            logger.error(f"PyMuPDF 转换失败: {e}")
+            logger.error("[PDFConverter] PyMuPDF 转换失败: {}", e)
             return {
                 "filename": filename,
                 "markdown": f"处理 PDF 文件时出错: {str(e)}",

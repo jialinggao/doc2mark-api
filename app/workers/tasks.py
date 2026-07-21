@@ -20,7 +20,7 @@ def _notify_result(task_id, payload):
         redis_conn.lpush(result_key, json.dumps(payload, ensure_ascii=False, default=str))
         redis_conn.expire(result_key, 300)
     except Exception as e:
-        logger.warning("[通知] 推送任务结果失败: {}", e)
+        logger.warning("[Task] 推送任务结果失败: {}", e)
 
 
 def process_document_task(
@@ -62,9 +62,9 @@ def process_document_task(
                     "status": "completed",
                     "result": result
                 }, timeout=10)
-                logger.info(f"回调通知发送成功: {callback_url}")
+                logger.info("[Task] 回调通知发送成功: {}", callback_url)
             except Exception as e:
-                logger.error(f"回调通知失败: {callback_url}, 错误: {e}")
+                logger.error("[Task] 回调通知失败: {}, 错误: {}", callback_url, e)
         
         _notify_result(task_id, {"status": "completed", "result": result})
         return result
@@ -77,9 +77,9 @@ def process_document_task(
                     "status": "failed",
                     "error": str(e)
                 }, timeout=10)
-                logger.info(f"回调通知发送成功: {callback_url}")
+                logger.info("[Task] 回调通知发送成功: {}", callback_url)
             except Exception as callback_error:
-                logger.error(f"回调通知失败: {callback_url}, 错误: {callback_error}")
+                logger.error("[Task] 回调通知失败: {}, 错误: {}", callback_url, callback_error)
         
         _notify_result(task_id, {"status": "failed", "error": str(e)})
         raise e

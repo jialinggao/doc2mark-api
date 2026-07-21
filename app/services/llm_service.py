@@ -20,7 +20,7 @@ class LLMService:
         self._initialized = True
         
         if not settings.ENABLE_LLM:
-            logger.debug("LLM is disabled, skipping client initialization")
+            logger.debug("[LLMService] LLM 已禁用，跳过客户端初始化")
             return
         
         try:
@@ -28,9 +28,9 @@ class LLMService:
                 base_url=settings.LLM_BASE_URL,
                 api_key=settings.LLM_API_KEY or "sk-local-model"
             )
-            logger.info(f"LLM client initialized: {settings.LLM_BASE_URL}, model: {settings.LLM_MODEL}")
+            logger.info("[LLMService] LLM 客户端初始化完成: base_url={}, model={}", settings.LLM_BASE_URL, settings.LLM_MODEL)
         except Exception as e:
-            logger.error(f"Failed to initialize LLM client: {e}")
+            logger.error("[LLMService] LLM 客户端初始化失败: {}", e)
             self._client = None
 
     @property
@@ -46,7 +46,7 @@ class LLMService:
             try:
                 result = json.loads(settings.LLM_EXTRA_BODY)
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse LLM_EXTRA_BODY: {e}")
+                logger.error("[LLMService] LLM_EXTRA_BODY 解析失败: {}", e)
         
         if settings.LLM_TOP_K is not None:
             result["top_k"] = settings.LLM_TOP_K
@@ -54,7 +54,7 @@ class LLMService:
         if settings.LLM_REPETITION_PENALTY is not None:
             result["repetition_penalty"] = settings.LLM_REPETITION_PENALTY
         
-        logger.info(f"[LLM extra_body] {result}")
+        logger.debug("[LLMService] extra_body: {}", result)
         return result
     
     def _parse_extra_params(self) -> dict:
@@ -65,10 +65,10 @@ class LLMService:
             try:
                 result = json.loads(settings.LLM_EXTRA_PARAMS)
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse LLM_EXTRA_PARAMS: {e}")
+                logger.error("[LLMService] LLM_EXTRA_PARAMS 解析失败: {}", e)
         
         if result:
-            logger.info(f"[LLM extra_params] {result}")
+            logger.debug("[LLMService] extra_params: {}", result)
         return result
     
     def describe_image(
@@ -107,11 +107,10 @@ class LLMService:
             estimated_text_tokens = text_char_count // 2
             estimated_image_tokens = image_byte_count // 500
             
-            logger.info(f"[LLM 请求] 模型: {settings.LLM_MODEL}, URL: {settings.LLM_BASE_URL}")
-            logger.info(f"[LLM 配置] 流式: {settings.LLM_STREAM}, Token统计: {settings.LLM_INCLUDE_USAGE}")
-            logger.info(f"[LLM 提示词分析] 文本长度: {text_char_count} 字符, 估算Token: {estimated_text_tokens}")
-            logger.info(f"[LLM 图片分析] 图片大小: {image_byte_count/1024:.2f} KB, 估算Token: {estimated_image_tokens}")
-            logger.info(f"[LLM 估算总计] 约 {estimated_text_tokens + estimated_image_tokens} Token")
+            logger.info("[LLMService] 请求配置: 模型={}, URL={}, 流式={}, Token统计={}", settings.LLM_MODEL, settings.LLM_BASE_URL, settings.LLM_STREAM, settings.LLM_INCLUDE_USAGE)
+            logger.info("[LLMService] 提示词分析: 文本长度={} 字符, 估算 Token={}", text_char_count, estimated_text_tokens)
+            logger.info("[LLMService] 图片分析: 图片大小={:.2f} KB, 估算 Token={}", image_byte_count/1024, estimated_image_tokens)
+            logger.info("[LLMService] 估算总计: 约 {} Token", estimated_text_tokens + estimated_image_tokens)
             
             extra_body = self._parse_extra_body()
             extra_params = self._parse_extra_params()
@@ -135,7 +134,7 @@ class LLMService:
         if settings.LLM_INCLUDE_USAGE:
             stream_options["include_usage"] = True
         
-        logger.info(f"[LLM 流式应答] 开始接收响应...")
+        logger.info("[LLMService] 流式应答开始接收")
         
         response = self.client.chat.completions.create(
             model=settings.LLM_MODEL,
@@ -163,7 +162,7 @@ class LLMService:
                 prompt_tokens = getattr(chunk.usage, "prompt_tokens", 0) or 0
                 completion_tokens = getattr(chunk.usage, "completion_tokens", 0) or 0
                 total_tokens = getattr(chunk.usage, "total_tokens", 0) or 0
-                logger.info(f"[LLM Token 用量] prompt: {prompt_tokens}, completion: {completion_tokens}, total: {total_tokens}")
+                logger.info("[LLMService] Token 用量: prompt={}, completion={}, total={}", prompt_tokens, completion_tokens, total_tokens)
             
             if chunk.choices:
                 delta = chunk.choices[0].delta
@@ -230,7 +229,7 @@ class LLMService:
                 
                 if delta_info:
                     chunk_count += 1
-                    logger.info(f"[LLM 流式应答] chunk #{chunk_count}: {delta_info}")
+                    logger.debug("[LLMService] 流式 chunk #{}: {}", chunk_count, delta_info)
                 
                 # 收集 content 和 reasoning_content
                 if delta.content:
@@ -238,26 +237,25 @@ class LLMService:
         
         result = "".join(result_chunks)
         reasoning_result = "".join(reasoning_chunks)
-        logger.info(f"[LLM 流式应答] 完成")
-        logger.info(f"[LLM 流式应答] content: {chunk_count} 个 chunk，{len(result)} 字符")
-        logger.info(f"[LLM 流式应答] reasoning_content: {len(reasoning_result)} 字符")
+        logger.info("[LLMService] 流式应答完成")
+        logger.info("[LLMService] 流式应答: {} 个 chunk, content={} 字符, reasoning={} 字符", chunk_count, len(result), len(reasoning_result))
         
         # 验证 Token 用量与实际内容的一致性
         if completion_tokens > 0:
             chars_per_token = len(result) / completion_tokens if completion_tokens > 0 else 0
-            logger.info(f"[LLM Token 统计验证] completion_tokens={completion_tokens}, 实际字符={len(result)}, 每Token平均字符数={chars_per_token:.2f}")
+            logger.info("[LLMService] Token 统计验证: completion_tokens={}, 实际字符={}, 每Token平均字符={:.2f}", completion_tokens, len(result), chars_per_token)
             
             # 如果启用了思考模式，说明 Token 统计可能包含思考内容
             if reasoning_result:
-                logger.info(f"[LLM Token 统计说明] 启用了思考模式，completion_tokens 可能包含思考内容的 Token 数")
+                logger.info("[LLMService] 启用了思考模式，completion_tokens 可能包含思考内容的 Token 数")
         
         if reasoning_result:
-            logger.info(f"[LLM 推理内容预览] {reasoning_result[:500]}...")
+            logger.debug("[LLMService] 推理内容预览: {}", reasoning_result[:500])
         return result
     
     def _non_stream_request(self, messages: list, extra_body: dict, extra_params: dict = None) -> str:
         """非流式请求"""
-        logger.info(f"[LLM 非流式应答] 等待响应...")
+        logger.info("[LLMService] 非流式应答等待响应")
         
         response = self.client.chat.completions.create(
             model=settings.LLM_MODEL,
@@ -278,9 +276,9 @@ class LLMService:
             prompt_tokens = response.usage.prompt_tokens
             completion_tokens = response.usage.completion_tokens
             total_tokens = response.usage.total_tokens
-            logger.info(f"[LLM Token 用量] prompt: {prompt_tokens}, completion: {completion_tokens}, total: {total_tokens}")
+            logger.info("[LLMService] Token 用量: prompt={}, completion={}, total={}", prompt_tokens, completion_tokens, total_tokens)
         
-        logger.info(f"[LLM 非流式应答] 完成，总长度: {len(result)} 字符")
+        logger.info("[LLMService] 非流式应答完成，内容长度: {} 字符", len(result))
         return result
 
 

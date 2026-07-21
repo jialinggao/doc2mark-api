@@ -81,7 +81,7 @@ class ExcelConverter:
         try:
             return self._convert_excel_internal(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
         except Exception as e:
-            logger.warning(f"[Excel 处理] 专用处理失败，回退到通用处理: {e}")
+            logger.warning("[ExcelConverter] 专用处理失败，回退到通用处理: {}", e)
             file_stream.seek(0)
             return general_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
 
@@ -146,12 +146,12 @@ class ExcelConverter:
                 "--outdir", tmpdir, input_path
             ]
 
-            logger.info(f"[Excel处理] 将.xls转换为.xlsx")
+            logger.info("[ExcelConverter] 将 .xls 转换为 .xlsx")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
             # 检查转换是否成功
             if result.returncode != 0:
-                logger.warning(f"[Excel处理] LibreOffice转换失败，尝试用xlrd直接读取: {result.stderr}")
+                logger.warning("[ExcelConverter] LibreOffice 转换失败，尝试用 xlrd 直接读取: {}", result.stderr)
                 return self._parse_xls_with_xlrd(input_path)
 
             # 检查转换后的文件是否存在
@@ -159,7 +159,7 @@ class ExcelConverter:
             xlsx_path = os.path.join(tmpdir, base_name + ".xlsx")
 
             if not os.path.exists(xlsx_path):
-                logger.warning(f"[Excel处理] 转换后的xlsx文件不存在，尝试用xlrd直接读取")
+                logger.warning("[ExcelConverter] 转换后的 xlsx 文件不存在，尝试用 xlrd 直接读取")
                 return self._parse_xls_with_xlrd(input_path)
 
             # 使用 openpyxl 解析转换后的 .xlsx

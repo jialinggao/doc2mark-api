@@ -75,7 +75,7 @@ class PdfStructureConverter:
 
         duration = round(time.time() - start_time, 2)
         logger.info(
-            "[PP-StructureV3] 转换完成: {} ({} 张图片, {:.2f}s)",
+            "[PPStructure] 转换完成: {} ({} 张图片, {:.2f}s)",
             filename, len(processed_images), duration
         )
 
@@ -101,16 +101,16 @@ class PdfStructureConverter:
 
             result["filename"] = filename
             logger.info(
-                "[PP-StructureV3] 远程引擎返回原始结果: {} ({} 张图片, {:.2f}s)",
+                "[PPStructure] 远程引擎返回原始结果: {} ({} 张图片, {:.2f}s)",
                 filename, len(result.get("images", [])), result.get("duration", 0)
             )
             return result
 
         except (FileNotFoundError, ConnectionRefusedError, OSError) as e:
-            logger.error("[PP-StructureV3] 远程引擎不可用: {}", e)
+            logger.error("[PPStructure] 远程引擎不可用: {}", e)
             return None
         except Exception as e:
-            logger.error("[PP-StructureV3] 远程引擎通信异常: {}", e)
+            logger.error("[PPStructure] 远程引擎通信异常: {}", e)
             return None
 
 

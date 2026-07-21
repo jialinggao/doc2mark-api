@@ -586,7 +586,7 @@ class WordConverter:
         try:
             cleaned_html = self._clean_html_content(html_content)
         except ImportError:
-            logger.warning("[Word转换] BeautifulSoup 未安装，跳过 HTML 清理")
+            logger.warning("[WordConverter] BeautifulSoup 未安装，跳过 HTML 清理")
             cleaned_html = html_content
 
         # 转换为 Markdown
@@ -646,7 +646,7 @@ class WordConverter:
                 "--outdir", tmpdir, input_path
             ]
 
-            logger.info(f"[Word转换] 执行命令: {' '.join(cmd)}")
+            logger.info("[WordConverter] 执行命令: {}", ' '.join(cmd))
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
 
             if result.returncode != 0:
@@ -683,7 +683,7 @@ class WordConverter:
 
             file_stream.seek(0)
         except Exception as e:
-            logger.warning(f"[Word转换] DOCX列表解析失败: {e}")
+            logger.warning("[WordConverter] DOCX 列表解析失败: {}", e)
             docx_list_items = []
 
         return docx_list_items
@@ -783,7 +783,7 @@ class WordConverter:
         # 先检测是否是 HTML 包装的文档
         is_html_wrapped, html_content = self._is_html_wrapped_doc(file_stream)
         if is_html_wrapped and html_content:
-            logger.info(f"[Word转换] 检测到 HTML 包装的 .doc 文档，使用 HTML 转 Markdown 流程")
+            logger.info("[WordConverter] 检测到 HTML 包装的 .doc 文档，使用 HTML 转 Markdown 流程")
             raw_markdown = self._convert_html_to_markdown(html_content)
             images = []
         else:
@@ -793,7 +793,7 @@ class WordConverter:
             if ext in self.OLD_TO_NEW_FORMAT:
                 new_ext = self.OLD_TO_NEW_FORMAT[ext]
                 current_filename = filename[:-len(ext)] + new_ext
-                logger.info(f"[Word转换] 检测到旧版Word格式 {ext}，自动转换为 {new_ext}")
+                logger.info("[WordConverter] 检测到旧版 Word 格式 {}，自动转换为 {}", ext, new_ext)
                 current_stream = self.convert_old_office_format(file_stream, filename, new_ext)
 
             # 提取列表信息（仅对 .docx）
