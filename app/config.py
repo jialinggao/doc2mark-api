@@ -35,9 +35,8 @@ class Settings(BaseSettings):
     
     DEFAULT_IMAGE_QUALITY: int = 100
     DEFAULT_MAX_IMAGE_SIZE: int = -1
-    
-    # PDF 回退方案配置
-    PDF_FALLBACK_RENDER_PAGES: bool = True  # 当 MarkItDown 无法提取 PDF 内容时，是否直接渲染页面为图片（而不是提取嵌入图片）
+
+    USE_STRUCTURE_ENGINE: bool = False  # PDF 是否使用 PP-StructureV3 引擎转换
     
     MAX_REQUESTS_PER_MINUTE: int = 60
     ALLOWED_ORIGINS: str = "*"

@@ -10,6 +10,7 @@ Structure 引擎进程 - 独立运行 PP-StructureV3，通过 Unix Socket 对外
 import os
 import io
 import re
+import gc
 import time
 import json
 import base64

@@ -2,11 +2,14 @@ from typing import BinaryIO
 import os
 from loguru import logger
 from app.models import ImageMode
+from app.config import settings
 from app.services.excel_converter import excel_converter
 from app.services.pdf_converter import pdf_converter
 from app.services.word_converter import word_converter
 from app.services.general_converter import general_converter
 from app.services.ofd_converter import ofd_converter
+
+
 class DocumentConverterService:
     """
     文档转换服务 - 路由入口
@@ -32,7 +35,6 @@ class DocumentConverterService:
         image_mode: ImageMode = ImageMode.BASE64,
         image_quality: int = 100,
         max_image_size: int = -1,
-        use_structure_engine: bool = False
     ) -> dict:
         """
         转换文档为 Markdown 格式（统一入口）
@@ -45,7 +47,6 @@ class DocumentConverterService:
             image_mode: 图片输出模式（BASE64 或 URL）
             image_quality: 图片压缩质量（0-100）
             max_image_size: 图片最大尺寸限制（像素），-1 表示不限制
-            use_structure_engine: PDF 是否使用 PP-StructureV3 引擎
 
         Returns:
             转换结果字典，包含：
@@ -64,7 +65,7 @@ class DocumentConverterService:
 
         # PDF 文件路由
         elif ext == '.pdf':
-            if use_structure_engine:
+            if settings.USE_STRUCTURE_ENGINE:
                 logger.info(f"[路由] PDF → pdf_structure_converter (PP-StructureV3): {filename}")
                 from app.services.pdf_structure_converter import pdf_structure_converter
                 return pdf_structure_converter.convert(file_stream, filename, enable_ocr, enable_llm, image_mode, image_quality, max_image_size)
