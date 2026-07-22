@@ -18,6 +18,28 @@ from loguru import logger
 
 setup_logging(log_level=settings.LOG_LEVEL)
 
+BANNER = r"""
+
+▄▄▄▄▄▄               ▄▄▄▄▄▄▄  ▄▄▄      ▄▄▄                      ▄▄▄▄   ▄▄▄▄▄▄▄   ▄▄▄▄▄ 
+███▀▀██▄             ▀▀▀▀████ ████▄  ▄████             ▄▄     ▄██▀▀██▄ ███▀▀███▄  ███  
+███  ███ ▄███▄ ▄████    ▄██▀  ███▀████▀███  ▀▀█▄ ████▄ ██ ▄█▀ ███  ███ ███▄▄███▀  ███  
+███  ███ ██ ██ ██     ▄███▄▄▄ ███  ▀▀  ███ ▄█▀██ ██ ▀▀ ████   ███▀▀███ ███▀▀▀▀    ███  
+██████▀  ▀███▀ ▀████ ████████ ███      ███ ▀█▄██ ██    ██ ▀█▄ ███  ███ ███       ▄███▄ 
+
+---------------------------------------------------------------------------------------
+
+                                         ▌        
+                               ▌  ▌▞▀▖▙▀▖▌▗▘▞▀▖▙▀▖
+                               ▐▐▐ ▌ ▌▌  ▛▚ ▛▀ ▌  
+                                ▘▘ ▝▀ ▘  ▘ ▘▝▀▘▘  
+
+  worker 服务主要功能:
+    - 后台消费 Redis 任务队列，执行文档转换任务
+    - 启动并管理 OCR 引擎进程（PaddleOCR）和 Structure 引擎进程（PP-StructureV3）
+    - 引擎进程崩溃时自动重启，保证服务可用性
+    - 预加载转换器及 LLM 资源，提升任务处理速度
+"""
+
 # Unix Socket 路径
 OCR_SOCKET_PATH = '/tmp/ocr.sock'
 STRUCTURE_SOCKET_PATH = '/tmp/structure.sock'
@@ -152,8 +174,8 @@ def _monitor_engines(engine_processes: dict, check_interval: int = 10):
 # ─── 主入口 ────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    logger.info(
-        "[Worker] 启动: sync={}, async={}",
+    logger.info("\n{}", BANNER)
+    logger.info("[Worker] 启动: sync={}, async={}",
         settings.SYNC_WORKER_COUNT,
         settings.ASYNC_WORKER_COUNT,
     )

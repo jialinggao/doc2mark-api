@@ -35,8 +35,6 @@ services:
     container_name: doc2mark-api-worker
     env_file:
       - .env
-    environment:
-      - LOG_LEVEL=DEBUG
     volumes:
       - ./volumes/logs:/app/logs
       - ./volumes/temp:/app/temp
